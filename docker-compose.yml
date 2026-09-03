@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: orderapp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: orderapp
+      POSTGRES_PASSWORD: orderapp
+      POSTGRES_DB: orderapp
+    ports:
+      - '${DB_PORT:-5434}:5432'
+    volumes:
+      - orderapp-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U orderapp -d orderapp']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  orderapp-pgdata:

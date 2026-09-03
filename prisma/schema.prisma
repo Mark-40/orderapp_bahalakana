@@ -1,0 +1,161 @@
+// ---------------------------------------------------------------------------
+// Snack & Breakfast ordering app — data model
+//
+// MONEY: every monetary column is an integer number of CENTAVOS (₱1 = 100).
+// Integer arithmetic keeps totals exact and serialises cleanly across the
+// server/client boundary (unlike Prisma's Decimal). Use `lib/money.ts` to
+// convert at the edges — never do money math in floating point.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// Back-office user. Customers do not have accounts in the MVP.
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(ADMIN)
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  STAFF
+}
+
+model Category {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  slug        String     @unique
+  description String?
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  menuItems   MenuItem[]
+
+  @@index([sortOrder])
+  @@map("categories")
+}
+
+model MenuItem {
+  id          String   @id @default(cuid())
+  categoryId  String
+  name        String
+  description String?
+  /// Price in centavos.
+  price       Int
+  imageUrl    String?
+  isAvailable Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category   Category    @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  orderItems OrderItem[]
+
+  @@unique([categoryId, name])
+  @@index([categoryId, sortOrder])
+  @@index([isAvailable])
+  @@map("menu_items")
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+}
+
+enum FulfillmentType {
+  PICKUP
+  DELIVERY
+}
+
+enum PaymentMethod {
+  CASH
+  GCASH
+}
+
+model Order {
+  id             String          @id @default(cuid())
+  orderNumber    String          @unique
+  /// Client-generated key that makes order submission idempotent, so a
+  /// double-tap or a retried request cannot create two orders.
+  idempotencyKey String?         @unique
+  customerName   String
+  /// Optional — retained on historical orders but no longer collected at checkout.
+  customerPhone  String?
+  customerEmail  String?
+  notes          String?
+  fulfillment    FulfillmentType @default(DELIVERY)
+  /// Only used when fulfillment = DELIVERY.
+  deliveryAddress String?
+  paymentMethod  PaymentMethod   @default(CASH)
+  /// Required when paymentMethod = GCASH — URL to the uploaded receipt image.
+  paymentReceiptUrl String?
+  status         OrderStatus     @default(PENDING)
+  /// Totals in centavos, frozen at creation time and computed server-side.
+  subtotal       Int
+  total          Int
+  itemCount      Int             @default(0)
+  cancelledAt    DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  items OrderItem[]
+
+  @@index([status, createdAt])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+/// A frozen snapshot of what was ordered. `productName` and `price` are copied
+/// from the MenuItem at order time so historical orders stay accurate when the
+/// menu is re-priced, renamed, or the item is deleted (menuItemId -> null).
+model OrderItem {
+  id          String  @id @default(cuid())
+  orderId     String
+  menuItemId  String?
+  productName String
+  /// Unit price in centavos AT THE TIME OF ORDERING.
+  price       Int
+  quantity    Int
+  /// price * quantity, in centavos.
+  subtotal    Int
+
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([menuItemId])
+  @@map("order_items")
+}
+
+/// Per-day sequence used to build human-friendly order numbers
+/// (ORD-YYYYMMDD-001). An atomic increment keeps numbers unique under
+/// concurrent checkouts.
+model OrderCounter {
+  day  String @id
+  last Int    @default(0)
+
+  @@map("order_counters")
+}
