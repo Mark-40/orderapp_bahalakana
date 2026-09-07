@@ -7,6 +7,9 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { formatMoney } from '@/lib/money'
+// Imported from the types module, not '@/lib/storage' — that barrel is
+// server-only because it resolves the storage driver.
+import { MAX_IMAGE_LABEL } from '@/lib/storage/types'
 import { cn } from '@/lib/utils'
 import { uploadReceiptAction } from '@/server/actions/receipts'
 
@@ -177,7 +180,7 @@ export function GCashPaymentDialog({
                   <>
                     <Upload className="size-6" />
                     <span className="text-sm font-semibold">Tap to upload receipt</span>
-                    <span className="text-xs">JPG, PNG or WebP · up to 5MB</span>
+                    <span className="text-xs">JPG, PNG or WebP · up to {MAX_IMAGE_LABEL}</span>
                   </>
                 )}
               </button>

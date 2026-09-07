@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button'
 import { OrderStatusBadge } from '@/components/admin/order-status-badge'
 import { OrderSummary } from '@/components/customer/order-summary'
 import { prisma } from '@/lib/db'
-import { formatDateTime } from '@/lib/utils'
+import { BREAKFAST_CUTOFF_LABEL, describeServiceDay } from '@/lib/orders/schedule'
+import { formatDateShort, formatDateTime } from '@/lib/utils'
 import { ORDER_TYPE_LABELS, type OrderTypeValue } from '@/lib/validation/schemas'
 
 // Status changes as the shop works the order, so never serve this from cache.
@@ -38,6 +39,8 @@ export default async function OrderConfirmationPage({
       notes: true,
       status: true,
       orderType: true,
+      isAdvance: true,
+      scheduledFor: true,
       paymentMethod: true,
       paymentReceiptUrl: true,
       subtotal: true,
@@ -73,6 +76,22 @@ export default async function OrderConfirmationPage({
           </p>
         </div>
 
+        {order.isAdvance && order.scheduledFor ? (
+          <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-3.5 text-sky-900">
+            <CalendarClock className="mt-0.5 size-5 shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1 text-sm">
+              <p className="font-bold">Advance order · {describeServiceDay(order.scheduledFor)}</p>
+              <p className="mt-0.5 text-xs leading-relaxed">
+                {order.orderType === 'BREAKFAST'
+                  ? `Placed after ${BREAKFAST_CUTOFF_LABEL}, so it is booked for the ${formatDateShort(
+                      order.scheduledFor,
+                    )} breakfast service.`
+                  : `Booked for ${formatDateShort(order.scheduledFor)}.`}
+              </p>
+            </div>
+          </div>
+        ) : null}
+
         <div className="rounded-2xl border border-cream-200 bg-white p-4 shadow-[var(--shadow-soft)]">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -100,7 +119,10 @@ export default async function OrderConfirmationPage({
             <div className="flex items-center gap-2 text-ink-500">
               <CalendarClock className="size-4 shrink-0" aria-hidden />
               <dt className="sr-only">Order type</dt>
-              <dd>{ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}</dd>
+              <dd>
+                {ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}
+                {order.scheduledFor ? ` · ${describeServiceDay(order.scheduledFor)}` : ''}
+              </dd>
             </div>
             <div className="flex items-center gap-2 text-ink-500">
               {order.paymentMethod === 'GCASH' ? (

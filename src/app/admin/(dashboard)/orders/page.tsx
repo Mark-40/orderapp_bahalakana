@@ -3,7 +3,9 @@ import Link from 'next/link'
 import { ArrowRight, Receipt } from 'lucide-react'
 import { DataTable, type Column } from '@/components/admin/data-table'
 import { OrderFilters } from '@/components/admin/order-filters'
+import { OrderScheduleBadge } from '@/components/admin/order-schedule-badge'
 import { OrderStatusBadge } from '@/components/admin/order-status-badge'
+import { OrderViewTabs } from '@/components/admin/order-view-tabs'
 import { Pagination } from '@/components/admin/pagination'
 import { EmptyState } from '@/components/ui/states'
 import { prisma } from '@/lib/db'
@@ -11,7 +13,7 @@ import type { Prisma } from '@/generated/prisma/client'
 import { endOfDay, startOfDay } from '@/lib/dashboard/date-range'
 import { formatMoneyCompact } from '@/lib/money'
 import { formatDateTime, formatPhone } from '@/lib/utils'
-import { orderFilterSchema } from '@/lib/validation/schemas'
+import { orderFilterSchema, type OrderTypeValue } from '@/lib/validation/schemas'
 
 export const metadata: Metadata = { title: 'Orders' }
 export const dynamic = 'force-dynamic'
@@ -27,6 +29,9 @@ type OrderRow = {
   itemCount: number
   total: number
   status: string
+  orderType: OrderTypeValue
+  isAdvance: boolean
+  scheduledFor: Date | null
 }
 
 function parseDate(value: string | undefined): Date | null {
@@ -48,16 +53,29 @@ export default async function AdminOrdersPage({
     status: typeof raw.status === 'string' ? raw.status : undefined,
     from: typeof raw.from === 'string' ? raw.from : undefined,
     to: typeof raw.to === 'string' ? raw.to : undefined,
+    view: typeof raw.view === 'string' ? raw.view : undefined,
     page: typeof raw.page === 'string' ? raw.page : 1,
   })
 
   // A malformed query string should show an unfiltered list, not an error page.
-  const filters = parsed.success ? parsed.data : { q: undefined, status: undefined, from: undefined, to: undefined, page: 1 }
+  const filters = parsed.success
+    ? parsed.data
+    : {
+        q: undefined,
+        status: undefined,
+        from: undefined,
+        to: undefined,
+        view: 'all' as const,
+        page: 1,
+      }
 
   const from = parseDate(filters.from)
   const to = parseDate(filters.to)
+  const advanceView = filters.view === 'advance'
 
-  const where: Prisma.OrderWhereInput = {
+  // Everything except the tab. The tab counts are computed against this, so
+  // each tab shows how many orders match the *current* search and dates.
+  const baseWhere: Prisma.OrderWhereInput = {
     ...(filters.status ? { status: filters.status } : {}),
     ...(from || to
       ? {
@@ -78,14 +96,27 @@ export default async function AdminOrdersPage({
       : {}),
   }
 
-  const total = await prisma.order.count({ where })
+  const where: Prisma.OrderWhereInput = advanceView
+    ? { ...baseWhere, isAdvance: true }
+    : baseWhere
+
+  const [allCount, advanceCount] = await Promise.all([
+    prisma.order.count({ where: baseWhere }),
+    prisma.order.count({ where: { ...baseWhere, isAdvance: true } }),
+  ])
+
+  const total = advanceView ? advanceCount : allCount
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   // Clamp so a stale ?page=99 link still renders a real page of results.
   const page = Math.min(filters.page, pageCount)
 
   const orders = await prisma.order.findMany({
     where,
-    orderBy: { createdAt: 'desc' },
+    // Advance orders read best as a schedule — soonest service day first, with
+    // the "date is in the notes" ones last. Everything else is newest first.
+    orderBy: advanceView
+      ? [{ scheduledFor: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }]
+      : { createdAt: 'desc' },
     skip: (page - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
     select: {
@@ -97,6 +128,9 @@ export default async function AdminOrdersPage({
       itemCount: true,
       total: true,
       status: true,
+      orderType: true,
+      isAdvance: true,
+      scheduledFor: true,
     },
   })
 
@@ -119,8 +153,16 @@ export default async function AdminOrdersPage({
       ),
     },
     {
+      key: 'schedule',
+      header: advanceView ? 'Service day' : 'Order type',
+      // In the advance tab the service day IS the point of the list, so it
+      // stays visible even on a narrow table.
+      ...(advanceView ? {} : { hideBelow: 'lg' as const }),
+      cell: (row) => <OrderScheduleBadge order={row} />,
+    },
+    {
       key: 'date',
-      header: 'Date / time',
+      header: 'Placed',
       hideBelow: 'lg',
       cell: (row) => <span className="text-xs">{formatDateTime(row.createdAt)}</span>,
     },
@@ -157,18 +199,33 @@ export default async function AdminOrdersPage({
   return (
     <div className="space-y-5">
       <header>
-        <h1 className="text-2xl font-extrabold text-ink-900">Orders</h1>
+        <h1 className="text-2xl font-extrabold text-ink-900">
+          {advanceView ? 'Advance orders' : 'Orders'}
+        </h1>
         <p className="mt-0.5 text-sm text-ink-500">
-          {total} order{total === 1 ? '' : 's'}
+          {total} {advanceView ? 'advance ' : ''}order{total === 1 ? '' : 's'}
           {filtered ? ' matching your filters' : ' in total'}
+          {advanceView ? ' · soonest service day first' : ''}
         </p>
       </header>
+
+      <OrderViewTabs
+        active={filters.view}
+        query={{
+          q: filters.q,
+          status: filters.status,
+          from: filters.from,
+          to: filters.to,
+        }}
+        counts={{ all: allCount, advance: advanceCount }}
+      />
 
       <OrderFilters
         q={filters.q ?? ''}
         status={filters.status ?? ''}
         from={filters.from ?? ''}
         to={filters.to ?? ''}
+        view={filters.view}
       />
 
       <DataTable
@@ -179,11 +236,19 @@ export default async function AdminOrdersPage({
         empty={
           <EmptyState
             icon={<Receipt className="size-6" />}
-            title={filtered ? 'No orders match those filters' : 'No orders yet'}
+            title={
+              filtered
+                ? 'No orders match those filters'
+                : advanceView
+                  ? 'No advance orders'
+                  : 'No orders yet'
+            }
             description={
               filtered
                 ? 'Try clearing the search or widening the date range.'
-                : 'Orders placed by customers will show up here right away.'
+                : advanceView
+                  ? 'Advance orders — and any breakfast ordered after 4PM, which is served the next morning — will appear here.'
+                  : 'Orders placed by customers will show up here right away.'
             }
           />
         }
@@ -201,6 +266,9 @@ export default async function AdminOrdersPage({
               <p className="tabular mt-0.5 text-xs text-ink-500">
                 {row.itemCount} item{row.itemCount === 1 ? '' : 's'} · {formatDateTime(row.createdAt)}
               </p>
+              <div className="mt-1.5">
+                <OrderScheduleBadge order={row} />
+              </div>
             </div>
             <div className="shrink-0 text-right">
               <p className="tabular text-base font-extrabold text-ink-900">

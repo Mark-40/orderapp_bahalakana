@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { prisma } from '@/lib/db'
 import { requireAdminAction } from '@/lib/auth/guard'
 import { menuItemSchema, priceUpdateSchema } from '@/lib/validation/schemas'
-import { storage, ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES } from '@/lib/storage'
+import { storage, ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, MAX_IMAGE_LABEL } from '@/lib/storage'
 
 export type MutationResult = {
   ok: boolean
@@ -184,7 +184,10 @@ export async function uploadImageAction(
     return { ok: false, error: 'Choose an image file first.' }
   }
   if (file.size > MAX_IMAGE_BYTES) {
-    return { ok: false, error: 'That image is larger than 5MB. Please pick a smaller one.' }
+    return {
+      ok: false,
+      error: `That image is larger than ${MAX_IMAGE_LABEL}. Please pick a smaller one.`,
+    }
   }
   if (!(ALLOWED_IMAGE_TYPES as readonly string[]).includes(file.type)) {
     return { ok: false, error: 'Only JPEG, PNG, WebP, AVIF or GIF images are supported.' }

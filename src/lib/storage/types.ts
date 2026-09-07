@@ -23,7 +23,16 @@ export interface StorageProvider {
   delete(key: string): Promise<void>
 }
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+/**
+ * Upload ceiling for menu photos and GCash receipts. Keep MAX_IMAGE_LABEL in
+ * step with it, and keep next.config.ts's serverActions.bodySizeLimit above it
+ * — the multipart body has to fit through the Server Action before this check
+ * ever runs.
+ */
+export const MAX_IMAGE_BYTES = 25 * 1024 * 1024
+
+/** How the ceiling is spelled out to people, in UI copy and error messages. */
+export const MAX_IMAGE_LABEL = '25MB'
 
 export const ALLOWED_IMAGE_TYPES = [
   'image/jpeg',

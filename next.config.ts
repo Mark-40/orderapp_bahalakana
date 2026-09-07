@@ -6,7 +6,11 @@ const nextConfig: NextConfig = {
   // The app renders menu images through <SmartImage>, a plain <img> with a graceful
   // fallback, so swapping Local -> Cloudinary -> S3 needs no Next.js config change.
   experimental: {
-    serverActions: { bodySizeLimit: '6mb' },
+    // Must stay above MAX_IMAGE_BYTES (src/lib/storage/types.ts): uploads go
+    // through a Server Action, and a body over this limit is rejected by the
+    // framework before the action's own size check can report a friendly error.
+    // The headroom covers multipart encoding overhead.
+    serverActions: { bodySizeLimit: '28mb' },
   },
 }
 

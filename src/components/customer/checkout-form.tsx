@@ -8,9 +8,14 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Textarea } from '@/components/ui/field'
 import { EmptyState, ErrorState } from '@/components/ui/states'
+import {
+  BREAKFAST_CUTOFF_LABEL,
+  resolveOrderSchedule,
+  rollsOverToTomorrow,
+} from '@/lib/orders/schedule'
 import { checkoutSchema } from '@/lib/validation/schemas'
 import type { OrderTypeValue, PaymentMethodValue } from '@/lib/validation/schemas'
-import { cn } from '@/lib/utils'
+import { cn, formatDateShort } from '@/lib/utils'
 import { submitOrderAction } from '@/server/actions/checkout'
 import { useCart } from '@/store/cart'
 import { GCashPaymentDialog } from './gcash-payment-dialog'
@@ -37,6 +42,30 @@ export function CheckoutForm() {
   const [paymentMethod, setPaymentMethod] = React.useState<PaymentMethodValue>('CASH')
   const [receiptUrl, setReceiptUrl] = React.useState<string | null>(null)
   const [gcashOpen, setGcashOpen] = React.useState(false)
+
+  // Read after mount only: the server and the browser can disagree about the
+  // clock, and the cutoff notice has to reflect the real current time. Kept
+  // fresh every minute so it flips at 4PM without a reload. The server decides
+  // for real at submit time — this is only here so nothing is a surprise.
+  const [now, setNow] = React.useState<Date | null>(null)
+  React.useEffect(() => {
+    const readClock = () => setNow(new Date())
+    // Read once just after mount, then once a minute, so the notice appears
+    // without a reload and flips the moment the cutoff passes.
+    const first = setTimeout(readClock, 0)
+    const timer = setInterval(readClock, 60_000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(timer)
+    }
+  }, [])
+
+  const rollsOver = now ? rollsOverToTomorrow(orderType, now) : false
+  const serviceDate = (() => {
+    if (!now) return ''
+    const { scheduledFor } = resolveOrderSchedule(orderType, now)
+    return scheduledFor ? formatDateShort(scheduledFor) : ''
+  })()
 
   // One key per checkout attempt. It makes the submission idempotent, so a
   // double-tap or a retried request can never create two orders.
@@ -240,6 +269,20 @@ export function CheckoutForm() {
             label="Morning Breakfast"
           />
         </div>
+
+        {rollsOver ? (
+          <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
+            <CalendarClock className="mt-0.5 size-5 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-bold">This becomes an advance order for tomorrow</p>
+              <p className="mt-0.5 text-xs leading-relaxed">
+                It is already past {BREAKFAST_CUTOFF_LABEL}, so today&rsquo;s breakfast service has
+                closed. The shop will prepare this order tomorrow morning
+                {serviceDate ? ` — ${serviceDate}` : ''}.
+              </p>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section className="space-y-3">

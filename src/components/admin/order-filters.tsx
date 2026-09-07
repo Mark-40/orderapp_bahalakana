@@ -16,11 +16,14 @@ export function OrderFilters({
   status,
   from,
   to,
+  view,
 }: {
   q: string
   status: string
   from: string
   to: string
+  /** Active tab. Preserved by Clear, which only drops the search filters. */
+  view?: string
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -112,7 +115,9 @@ export function OrderFilters({
         {hasFilters ? (
           <button
             type="button"
-            onClick={() => router.push(pathname)}
+            onClick={() =>
+              router.push(view && view !== 'all' ? `${pathname}?view=${view}` : pathname)
+            }
             className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-white text-sm font-semibold text-ink-500 ring-1 ring-cream-200 transition-colors hover:text-chili-600"
           >
             <X className="size-4" />

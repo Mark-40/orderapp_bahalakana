@@ -20,6 +20,7 @@ import { formatMoney, formatMoneyCompact } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { formatTime } from '@/lib/utils'
 import { updateOrderStatusAction } from '@/server/actions/orders'
+import { describeServiceDay } from '@/lib/orders/schedule'
 import { ORDER_TYPE_LABELS, type OrderTypeValue } from '@/lib/validation/schemas'
 
 export type ChecklistOrderItem = {
@@ -40,6 +41,8 @@ export type ChecklistOrder = {
   status: string
   notes: string | null
   orderType: OrderTypeValue
+  isAdvance: boolean
+  scheduledFor: Date | string | null
   paymentMethod: 'CASH' | 'GCASH'
   paymentReceiptUrl: string | null
   items: ChecklistOrderItem[]
@@ -53,7 +56,15 @@ export type ChecklistOrder = {
  * Optimistic UI — the row toggles immediately and rolls back if the server
  * rejects the change.
  */
-export function TodayOrdersChecklist({ orders }: { orders: ChecklistOrder[] }) {
+export function TodayOrdersChecklist({
+  orders,
+  emptyTitle = 'No orders in this period',
+  emptyDescription = 'New orders will appear here as soon as customers place them.',
+}: {
+  orders: ChecklistOrder[]
+  emptyTitle?: string
+  emptyDescription?: string
+}) {
   const router = useRouter()
   const [done, setDone] = React.useState<Record<string, boolean>>(() =>
     Object.fromEntries(orders.map((order) => [order.id, order.status === 'COMPLETED'])),
@@ -72,8 +83,8 @@ export function TodayOrdersChecklist({ orders }: { orders: ChecklistOrder[] }) {
     return (
       <EmptyState
         icon={<Receipt className="size-6" />}
-        title="No orders in this period"
-        description="New orders will appear here as soon as customers place them."
+        title={emptyTitle}
+        description={emptyDescription}
       />
     )
   }
@@ -222,6 +233,12 @@ export function TodayOrdersChecklist({ orders }: { orders: ChecklistOrder[] }) {
                     <CalendarClock className="size-3.5" />
                     {ORDER_TYPE_LABELS[order.orderType]}
                   </span>
+                  {order.isAdvance ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-800">
+                      <CalendarClock className="size-3.5" />
+                      Advance · {describeServiceDay(order.scheduledFor)}
+                    </span>
+                  ) : null}
                   <span className="inline-flex items-center gap-1">
                     {order.paymentMethod === 'GCASH' ? (
                       <QrCode className="size-3.5" />

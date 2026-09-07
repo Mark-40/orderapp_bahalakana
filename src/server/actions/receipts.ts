@@ -2,7 +2,7 @@
 
 import { headers } from 'next/headers'
 import { orderRateLimit } from '@/lib/rate-limit'
-import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, storage } from '@/lib/storage'
+import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, MAX_IMAGE_LABEL, storage } from '@/lib/storage'
 
 export type UploadReceiptResult =
   | { ok: true; url: string }
@@ -36,7 +36,10 @@ export async function uploadReceiptAction(formData: FormData): Promise<UploadRec
     return { ok: false, error: 'Choose a receipt image first.' }
   }
   if (file.size > MAX_IMAGE_BYTES) {
-    return { ok: false, error: 'That image is larger than 5MB. Please pick a smaller one.' }
+    return {
+      ok: false,
+      error: `That image is larger than ${MAX_IMAGE_LABEL}. Please pick a smaller one.`,
+    }
   }
   if (!(ALLOWED_IMAGE_TYPES as readonly string[]).includes(file.type)) {
     return { ok: false, error: 'Only JPEG, PNG, WebP, AVIF or GIF images are supported.' }

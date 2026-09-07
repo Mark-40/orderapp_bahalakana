@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import {
   ArrowRight,
+  CalendarClock,
   ClipboardList,
   Clock,
   Flame,
@@ -18,6 +19,7 @@ import { prisma } from '@/lib/db'
 import { REVENUE_STATUSES, getBestSellers, getDailySales, getDashboardStats } from '@/lib/dashboard/stats'
 import { resolveRange, toDateInputValue } from '@/lib/dashboard/date-range'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
+import { phStartOfDay } from '@/lib/orders/schedule'
 import { formatDateShort } from '@/lib/utils'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -31,34 +33,56 @@ export default async function DashboardPage({
   const params = await searchParams
   const range = resolveRange(params.range, params.from, params.to)
 
-  const [stats, bestSellers, dailySales, recentOrders, openOrders] = await Promise.all([
-    getDashboardStats(range),
-    getBestSellers(range, 5),
-    getDailySales(range),
-    prisma.order.findMany({
-      where: { createdAt: { gte: range.from, lte: range.to } },
-      orderBy: { createdAt: 'desc' },
-      take: 20,
-      select: {
-        id: true,
-        orderNumber: true,
-        customerName: true,
-        createdAt: true,
-        itemCount: true,
-        total: true,
-        status: true,
-        notes: true,
-        orderType: true,
-        paymentMethod: true,
-        paymentReceiptUrl: true,
-        items: {
-          orderBy: { productName: 'asc' },
-          select: { id: true, productName: true, quantity: true, price: true, subtotal: true },
+  // Shared by both order lists below.
+  const checklistFields = {
+    id: true,
+    orderNumber: true,
+    customerName: true,
+    createdAt: true,
+    itemCount: true,
+    total: true,
+    status: true,
+    notes: true,
+    orderType: true,
+    isAdvance: true,
+    scheduledFor: true,
+    paymentMethod: true,
+    paymentReceiptUrl: true,
+    items: {
+      orderBy: { productName: 'asc' as const },
+      select: { id: true, productName: true, quantity: true, price: true, subtotal: true },
+    },
+  }
+
+  const [stats, bestSellers, dailySales, recentOrders, openOrders, advanceOrders] =
+    await Promise.all([
+      getDashboardStats(range),
+      getBestSellers(range, 5),
+      getDailySales(range),
+      prisma.order.findMany({
+        where: { createdAt: { gte: range.from, lte: range.to } },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        select: checklistFields,
+      }),
+      prisma.order.count({
+        where: { status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] } },
+      }),
+      // Advance orders still to be served, soonest first — independent of the
+      // range filter, because an advance order is placed on one day and
+      // prepared on another. A breakfast ordered after 4PM lands here as
+      // tomorrow's; the ones whose date only lives in the notes come last.
+      prisma.order.findMany({
+        where: {
+          isAdvance: true,
+          status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          OR: [{ scheduledFor: null }, { scheduledFor: { gte: phStartOfDay(new Date()) } }],
         },
-      },
-    }),
-    prisma.order.count({ where: { status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] } } }),
-  ])
+        orderBy: [{ scheduledFor: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+        take: 20,
+        select: checklistFields,
+      }),
+    ])
 
   const peakDay = dailySales.reduce<{ day: string; sales: number } | null>(
     (best, current) => (!best || current.sales > best.sales ? current : best),
@@ -198,6 +222,34 @@ export default async function DashboardPage({
         </div>
 
         <TodayOrdersChecklist orders={recentOrders} />
+      </section>
+
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div>
+            <h2 className="flex items-center gap-2 text-lg font-extrabold text-ink-900">
+              <CalendarClock className="size-4 text-sky-700" />
+              Advance orders
+            </h2>
+            <p className="mt-0.5 text-xs text-ink-500">
+              Still to be served, soonest first. A breakfast ordered after 4PM is served the next
+              morning.
+            </p>
+          </div>
+          <Link
+            href="/admin/orders?view=advance"
+            className="flex items-center gap-1 text-sm font-semibold text-brand-600 underline-offset-4 hover:underline"
+          >
+            View all
+            <ArrowRight className="size-4" />
+          </Link>
+        </div>
+
+        <TodayOrdersChecklist
+          orders={advanceOrders}
+          emptyTitle="No advance orders waiting"
+          emptyDescription="Advance orders — and any breakfast ordered after 4PM — will appear here until they are served."
+        />
       </section>
     </div>
   )

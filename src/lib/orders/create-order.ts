@@ -4,6 +4,7 @@ import { formatMoneyCompact } from '@/lib/money'
 import type { CheckoutInput } from '@/lib/validation/schemas'
 import { checkoutSchema } from '@/lib/validation/schemas'
 import { nextOrderNumber } from './order-number'
+import { resolveOrderSchedule } from './schedule'
 
 /**
  * Order creation.
@@ -114,6 +115,11 @@ export async function createOrder(
   const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0)
 
   const now = new Date()
+  // Which service day this belongs to is the server's call, not the client's:
+  // a breakfast placed after the 4PM cutoff becomes an advance order for the
+  // next morning.
+  const schedule = resolveOrderSchedule(parsed.data.orderType, now)
+
   const order = await prisma.$transaction(async (tx) => {
     const orderNumber = await nextOrderNumber(tx, now)
     return tx.order.create({
@@ -124,6 +130,8 @@ export async function createOrder(
         notes: parsed.data.notes || null,
         fulfillment: 'DELIVERY',
         orderType: parsed.data.orderType,
+        isAdvance: schedule.isAdvance,
+        scheduledFor: schedule.scheduledFor,
         paymentMethod: parsed.data.paymentMethod,
         paymentReceiptUrl: parsed.data.paymentReceiptUrl || null,
         status: 'PENDING',

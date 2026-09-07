@@ -166,10 +166,15 @@ export const updateOrderStatusSchema = z.object({
   status: z.enum(ORDER_STATUSES),
 })
 
+/** Tabs on the admin orders list. `advance` shows only advance orders. */
+export const ORDER_VIEWS = ['all', 'advance'] as const
+export type OrderViewValue = (typeof ORDER_VIEWS)[number]
+
 export const orderFilterSchema = z.object({
   q: z.string().trim().max(80).optional(),
   status: z.enum(ORDER_STATUSES).optional(),
   from: z.string().optional(),
   to: z.string().optional(),
+  view: z.enum(ORDER_VIEWS).default('all'),
   page: z.coerce.number().int().min(1).default(1),
 })

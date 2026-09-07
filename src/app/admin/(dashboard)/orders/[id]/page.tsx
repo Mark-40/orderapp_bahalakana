@@ -14,11 +14,13 @@ import {
   User,
   Wallet,
 } from 'lucide-react'
+import { OrderScheduleBadge } from '@/components/admin/order-schedule-badge'
 import { OrderStatusBadge } from '@/components/admin/order-status-badge'
 import { StatusUpdater } from '@/components/admin/status-updater'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
+import { BREAKFAST_CUTOFF_LABEL, describeServiceDayLong } from '@/lib/orders/schedule'
 import { formatDateTime, formatPhone } from '@/lib/utils'
 import { ORDER_TYPE_LABELS, type OrderStatusValue, type OrderTypeValue } from '@/lib/validation/schemas'
 
@@ -73,7 +75,10 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
             <h1 className="tabular text-2xl font-extrabold text-ink-900">{order.orderNumber}</h1>
             <p className="mt-0.5 text-sm text-ink-500">{formatDateTime(order.createdAt)}</p>
           </div>
-          <OrderStatusBadge status={order.status} />
+          <div className="flex flex-wrap items-center gap-2">
+            <OrderScheduleBadge order={order} />
+            <OrderStatusBadge status={order.status} />
+          </div>
         </div>
       </div>
 
@@ -191,7 +196,25 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
               <DetailRow
                 icon={<CalendarClock className="size-4" />}
                 label="Order type"
-                value={ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}
+                value={
+                  <div className="space-y-1">
+                    <p className="font-semibold">
+                      {ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}
+                    </p>
+                    {order.isAdvance ? (
+                      <p className="text-xs font-semibold text-sky-800">
+                        Advance order · to serve {describeServiceDayLong(order.scheduledFor)}
+                        {order.orderType === 'BREAKFAST' && order.scheduledFor
+                          ? ` — placed after ${BREAKFAST_CUTOFF_LABEL}, so it is the next morning's breakfast.`
+                          : ''}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-ink-500">
+                        For {describeServiceDayLong(order.scheduledFor)}
+                      </p>
+                    )}
+                  </div>
+                }
               />
 
               <DetailRow

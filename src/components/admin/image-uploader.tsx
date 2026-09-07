@@ -5,6 +5,9 @@ import { ImagePlus, Link2, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/field'
 import { SmartImage } from '@/components/ui/smart-image'
+// Imported from the types module, not '@/lib/storage' — that barrel is
+// server-only because it resolves the storage driver.
+import { MAX_IMAGE_LABEL } from '@/lib/storage/types'
 import { cn } from '@/lib/utils'
 import { uploadImageAction } from '@/server/actions/menu'
 
@@ -102,7 +105,7 @@ export function ImageUploader({
                     Uploading…
                   </>
                 ) : (
-                  <>Choose an image (max 5MB)</>
+                  <>Choose an image (max {MAX_IMAGE_LABEL})</>
                 )}
               </label>
             </>

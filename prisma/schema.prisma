@@ -120,6 +120,14 @@ model Order {
   /// When the customer wants the order fulfilled: an advance order, the 4PM
   /// snack window, or the morning breakfast window.
   orderType      OrderType       @default(ADVANCE)
+  /// True when the order is NOT for today's service — either the customer
+  /// chose ADVANCE, or they ordered breakfast after the 4PM cutoff, which
+  /// belongs to the next morning. Decided server-side (lib/orders/schedule).
+  isAdvance      Boolean         @default(false)
+  /// Philippine-time midnight of the service day the order is prepared for.
+  /// Null for a customer-chosen ADVANCE order, where the wanted date lives in
+  /// the notes rather than being derivable from the clock.
+  scheduledFor   DateTime?
   status         OrderStatus     @default(PENDING)
   /// Totals in centavos, frozen at creation time and computed server-side.
   subtotal       Int
@@ -134,6 +142,7 @@ model Order {
 
   @@index([status, createdAt])
   @@index([createdAt])
+  @@index([isAdvance, scheduledFor])
   @@map("orders")
 }
 
