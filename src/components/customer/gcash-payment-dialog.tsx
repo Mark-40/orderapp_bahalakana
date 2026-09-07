@@ -6,10 +6,8 @@ import { Check, Loader2, Upload, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog'
+import { compressImage, formatBytes } from '@/lib/images/compress'
 import { formatMoney } from '@/lib/money'
-// Imported from the types module, not '@/lib/storage' — that barrel is
-// server-only because it resolves the storage driver.
-import { MAX_IMAGE_LABEL } from '@/lib/storage/types'
 import { cn } from '@/lib/utils'
 import { uploadReceiptAction } from '@/server/actions/receipts'
 
@@ -48,8 +46,18 @@ export function GCashPaymentDialog({
     setError(null)
     setUploading(true)
     try {
+      // Phone photos routinely exceed what the host will accept in a request
+      // body, so shrink first. A receipt screenshot loses nothing that matters.
+      const shrunk = await compressImage(file)
+      if (!shrunk.ok) {
+        setError(
+          `That image is ${formatBytes(file.size)} and could not be made smaller. Please take a screenshot of the receipt instead, or pick a smaller image.`,
+        )
+        return
+      }
+
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', shrunk.file)
       const result = await uploadReceiptAction(formData)
       if (result.ok) {
         setReceiptUrl(result.url)
@@ -180,7 +188,9 @@ export function GCashPaymentDialog({
                   <>
                     <Upload className="size-6" />
                     <span className="text-sm font-semibold">Tap to upload receipt</span>
-                    <span className="text-xs">JPG, PNG or WebP · up to {MAX_IMAGE_LABEL}</span>
+                    <span className="text-xs">
+                      JPG, PNG or WebP · large photos are resized automatically
+                    </span>
                   </>
                 )}
               </button>

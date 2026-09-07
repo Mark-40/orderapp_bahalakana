@@ -5,9 +5,7 @@ import { ImagePlus, Link2, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Input } from '@/components/ui/field'
 import { SmartImage } from '@/components/ui/smart-image'
-// Imported from the types module, not '@/lib/storage' — that barrel is
-// server-only because it resolves the storage driver.
-import { MAX_IMAGE_LABEL } from '@/lib/storage/types'
+import { compressImage, formatBytes } from '@/lib/images/compress'
 import { cn } from '@/lib/utils'
 import { uploadImageAction } from '@/server/actions/menu'
 
@@ -34,8 +32,18 @@ export function ImageUploader({
     if (!file) return
     setUploading(true)
     try {
+      // Shrink before it leaves the browser: the host caps the request body
+      // below what a phone camera produces, and a menu tile never needs more.
+      const shrunk = await compressImage(file)
+      if (!shrunk.ok) {
+        toast.error(
+          `That image is ${formatBytes(file.size)} and could not be made smaller. Please pick a smaller one.`,
+        )
+        return
+      }
+
       const formData = new FormData()
-      formData.append('file', file)
+      formData.append('file', shrunk.file)
       const result = await uploadImageAction(formData)
       if (result.ok) {
         setUrl(result.url)
@@ -105,7 +113,7 @@ export function ImageUploader({
                     Uploading…
                   </>
                 ) : (
-                  <>Choose an image (max {MAX_IMAGE_LABEL})</>
+                  <>Choose an image (resized automatically)</>
                 )}
               </label>
             </>

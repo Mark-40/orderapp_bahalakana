@@ -13,7 +13,7 @@ import {
   resolveOrderSchedule,
   rollsOverToTomorrow,
 } from '@/lib/orders/schedule'
-import { checkoutSchema } from '@/lib/validation/schemas'
+import { GCASH_ENABLED, checkoutSchema } from '@/lib/validation/schemas'
 import type { OrderTypeValue, PaymentMethodValue } from '@/lib/validation/schemas'
 import { cn, formatDateShort } from '@/lib/utils'
 import { submitOrderAction } from '@/server/actions/checkout'
@@ -77,6 +77,7 @@ export function CheckoutForm() {
   const paymentReady = paymentMethod === 'CASH' || (paymentMethod === 'GCASH' && !!receiptUrl)
 
   function selectPaymentMethod(method: PaymentMethodValue) {
+    if (method === 'GCASH' && !GCASH_ENABLED) return
     setPaymentMethod(method)
     if (method === 'GCASH') {
       setGcashOpen(true)
@@ -289,7 +290,7 @@ export function CheckoutForm() {
         <h2 className="text-sm font-bold tracking-wide text-ink-500 uppercase">
           Payment method
         </h2>
-        <div className="grid grid-cols-2 gap-2">
+        <div className={cn('grid gap-2', GCASH_ENABLED ? 'grid-cols-2' : 'grid-cols-1')}>
           <PaymentOption
             selected={paymentMethod === 'CASH'}
             onSelect={() => selectPaymentMethod('CASH')}
@@ -297,14 +298,22 @@ export function CheckoutForm() {
             label="Cash"
             caption="Pay on delivery"
           />
-          <PaymentOption
-            selected={paymentMethod === 'GCASH'}
-            onSelect={() => selectPaymentMethod('GCASH')}
-            icon={<QrCode className="size-5" />}
-            label="GCash"
-            caption="Scan QR to pay"
-          />
+          {GCASH_ENABLED ? (
+            <PaymentOption
+              selected={paymentMethod === 'GCASH'}
+              onSelect={() => selectPaymentMethod('GCASH')}
+              icon={<QrCode className="size-5" />}
+              label="GCash"
+              caption="Scan QR to pay"
+            />
+          ) : null}
         </div>
+
+        {GCASH_ENABLED ? null : (
+          <p className="text-xs leading-relaxed text-ink-500">
+            GCash is temporarily unavailable — please pay cash on delivery.
+          </p>
+        )}
 
         {paymentMethod === 'GCASH' ? (
           <div
@@ -384,13 +393,15 @@ export function CheckoutForm() {
         </Button>
       </div>
 
-      <GCashPaymentDialog
-        open={gcashOpen}
-        onOpenChange={setGcashOpen}
-        amount={subtotal}
-        initialReceiptUrl={receiptUrl}
-        onConfirm={(url) => setReceiptUrl(url)}
-      />
+      {GCASH_ENABLED ? (
+        <GCashPaymentDialog
+          open={gcashOpen}
+          onOpenChange={setGcashOpen}
+          amount={subtotal}
+          initialReceiptUrl={receiptUrl}
+          onConfirm={(url) => setReceiptUrl(url)}
+        />
+      ) : null}
     </form>
   )
 }

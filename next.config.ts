@@ -10,6 +10,11 @@ const nextConfig: NextConfig = {
     // through a Server Action, and a body over this limit is rejected by the
     // framework before the action's own size check can report a friendly error.
     // The headroom covers multipart encoding overhead.
+    //
+    // This only buys what the HOST allows. Vercel rejects any Serverless
+    // Function body over 4.5MB regardless of what is set here, which is why the
+    // browser shrinks images to UPLOAD_BUDGET_BYTES (src/lib/images/compress.ts)
+    // before uploading. On a container host the full limit applies.
     serverActions: { bodySizeLimit: '28mb' },
   },
 }

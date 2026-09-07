@@ -24,10 +24,15 @@ export interface StorageProvider {
 }
 
 /**
- * Upload ceiling for menu photos and GCash receipts. Keep MAX_IMAGE_LABEL in
- * step with it, and keep next.config.ts's serverActions.bodySizeLimit above it
- * — the multipart body has to fit through the Server Action before this check
- * ever runs.
+ * Server-side upload ceiling for menu photos and GCash receipts. Keep
+ * MAX_IMAGE_LABEL in step with it, and keep next.config.ts's
+ * serverActions.bodySizeLimit above it — the multipart body has to fit through
+ * the Server Action before this check ever runs.
+ *
+ * In practice uploads arrive far smaller: the browser downscales anything over
+ * UPLOAD_BUDGET_BYTES (src/lib/images/compress.ts) first, because some hosts cap
+ * the request body well below this. So this is the backstop, not the number
+ * people bump into.
  */
 export const MAX_IMAGE_BYTES = 25 * 1024 * 1024
 

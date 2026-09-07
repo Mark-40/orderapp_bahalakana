@@ -3,6 +3,7 @@
 import { headers } from 'next/headers'
 import { orderRateLimit } from '@/lib/rate-limit'
 import { ALLOWED_IMAGE_TYPES, MAX_IMAGE_BYTES, MAX_IMAGE_LABEL, storage } from '@/lib/storage'
+import { GCASH_ENABLED } from '@/lib/validation/schemas'
 
 export type UploadReceiptResult =
   | { ok: true; url: string }
@@ -15,6 +16,12 @@ export type UploadReceiptResult =
  * folder ahead of a burst of orders.
  */
 export async function uploadReceiptAction(formData: FormData): Promise<UploadReceiptResult> {
+  // Closed along with the payment method it serves. This is a public,
+  // unauthenticated write, so it should not stay reachable while unused.
+  if (!GCASH_ENABLED) {
+    return { ok: false, error: 'GCash is temporarily unavailable. Please choose Cash on delivery.' }
+  }
+
   const headerList = await headers()
   const ip =
     headerList.get('x-forwarded-for')?.split(',')[0]?.trim() ||

@@ -21,6 +21,23 @@ export const FULFILLMENT_TYPES = ['PICKUP', 'DELIVERY'] as const
 export const PAYMENT_METHODS = ['CASH', 'GCASH'] as const
 export type PaymentMethodValue = (typeof PAYMENT_METHODS)[number]
 
+/**
+ * GCash is temporarily switched off.
+ *
+ * Paying by GCash requires uploading a receipt image, and uploads need a real
+ * object store — with STORAGE_DRIVER unset the app falls back to writing into
+ * `public/uploads`, which cannot work on a read-only serverless filesystem.
+ * Rather than offer a payment method that fails at the last step, checkout is
+ * cash-only until storage is configured.
+ *
+ * To re-enable: set STORAGE_DRIVER (plus its credentials) to cloudinary or s3,
+ * verify a receipt upload succeeds, then flip this to `true`. Nothing else has
+ * to change — the QR dialog, the upload action and the admin receipt views are
+ * all still here, and orders already paid by GCash keep rendering correctly
+ * either way.
+ */
+export const GCASH_ENABLED = false
+
 export const ORDER_TYPES = ['ADVANCE', 'SNACK_4PM', 'BREAKFAST'] as const
 export type OrderTypeValue = (typeof ORDER_TYPES)[number]
 
@@ -155,6 +172,13 @@ export const checkoutSchema = z.object({
       path: ['paymentReceiptUrl'],
     },
   )
+  // Enforced server-side too: the browser is not the authority on which
+  // payment methods are open, so a stale tab or a hand-made payload cannot
+  // place a GCash order while it is switched off.
+  .refine((v) => GCASH_ENABLED || v.paymentMethod !== 'GCASH', {
+    message: 'GCash is temporarily unavailable. Please choose Cash on delivery.',
+    path: ['paymentMethod'],
+  })
 export type CheckoutInput = z.input<typeof checkoutSchema>
 
 // ---------------------------------------------------------------------------

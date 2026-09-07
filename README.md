@@ -205,7 +205,7 @@ Customer menu: <http://localhost:3000> · Admin: <http://localhost:3000/admin>
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Development server |
-| `npm run build` / `npm start` | Production build and serve |
+| `npm run build` / `npm start` | Production build and serve (no migrations — see below) |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
 | `npm run smoke` | 37 end-to-end checks (server must be running) |
@@ -226,6 +226,35 @@ npm run db:deploy             # production: applies existing migrations only
 Prisma 7 keeps the connection URL out of `schema.prisma`; the CLI reads it from
 `prisma.config.ts` and the runtime client gets it through the pg driver adapter in
 `src/lib/db.ts`.
+
+**Migrations are deliberate, not part of `npm run build`.** Apply them yourself
+before deploying code that depends on them:
+
+```bash
+npm run db:deploy   # then push / deploy
+```
+
+Running `prisma migrate deploy` inside the build looks convenient but breaks on
+serverless hosts. Prisma's schema engine needs a real session (it takes an
+advisory lock), so it cannot go through a transaction-mode pooler at all, and
+through Supabase's session-mode pooler it competes for the same 15 client slots
+as live traffic — a busy app makes the build fail with
+`FATAL: (EMAXCONNSESSION) max clients reached in session mode`. Every preview
+deploy would also migrate the production database, and one failed migration
+blocks an unrelated deploy.
+
+### Connection pooling
+
+`DATABASE_URL` should point at Supabase's **transaction**-mode pooler
+(port `6543`) in production. Session mode (port `5432`) holds one server
+connection per client for its entire lifetime, which serverless instances
+exhaust quickly; transaction mode hands the connection back after each
+statement. `src/lib/db.ts` also caps the per-instance pool — 1 connection on
+Vercel, 5 elsewhere, override with `DATABASE_POOL_MAX`.
+
+The Prisma CLI is the exception: `db:migrate` / `db:deploy` need session mode
+(`5432`) or a direct connection, which is another reason to run them from a
+machine rather than from the build.
 
 ### Seeding
 
