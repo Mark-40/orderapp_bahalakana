@@ -23,6 +23,10 @@ export function formatPhone(phone: string): string {
   return phone
 }
 
+// All dates are rendered in Philippine time, regardless of where the server
+// runs (Vercel = UTC by default), so timestamps stay consistent across devices.
+const PH_TIME_ZONE = 'Asia/Manila'
+
 export function formatDateTime(date: Date | string): string {
   return new Date(date).toLocaleString('en-PH', {
     month: 'short',
@@ -31,6 +35,7 @@ export function formatDateTime(date: Date | string): string {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    timeZone: PH_TIME_ZONE,
   })
 }
 
@@ -39,6 +44,7 @@ export function formatTime(date: Date | string): string {
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
+    timeZone: PH_TIME_ZONE,
   })
 }
 
@@ -47,5 +53,6 @@ export function formatDateShort(date: Date | string): string {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
+    timeZone: PH_TIME_ZONE,
   })
 }
