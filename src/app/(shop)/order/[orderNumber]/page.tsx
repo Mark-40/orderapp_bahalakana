@@ -1,12 +1,13 @@
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { CheckCircle2, Clock, ExternalLink, QrCode, Truck, Wallet } from 'lucide-react'
+import { CalendarClock, CheckCircle2, Clock, ExternalLink, QrCode, Truck, Wallet } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { OrderStatusBadge } from '@/components/admin/order-status-badge'
 import { OrderSummary } from '@/components/customer/order-summary'
 import { prisma } from '@/lib/db'
 import { formatDateTime } from '@/lib/utils'
+import { ORDER_TYPE_LABELS, type OrderTypeValue } from '@/lib/validation/schemas'
 
 // Status changes as the shop works the order, so never serve this from cache.
 export const dynamic = 'force-dynamic'
@@ -36,6 +37,7 @@ export default async function OrderConfirmationPage({
       customerName: true,
       notes: true,
       status: true,
+      orderType: true,
       paymentMethod: true,
       paymentReceiptUrl: true,
       subtotal: true,
@@ -94,6 +96,11 @@ export default async function OrderConfirmationPage({
               <Truck className="size-4 shrink-0" aria-hidden />
               <dt className="sr-only">Fulfilment</dt>
               <dd>For delivery</dd>
+            </div>
+            <div className="flex items-center gap-2 text-ink-500">
+              <CalendarClock className="size-4 shrink-0" aria-hidden />
+              <dt className="sr-only">Order type</dt>
+              <dd>{ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}</dd>
             </div>
             <div className="flex items-center gap-2 text-ink-500">
               {order.paymentMethod === 'GCASH' ? (

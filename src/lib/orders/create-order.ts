@@ -123,6 +123,7 @@ export async function createOrder(
         customerName: parsed.data.customerName,
         notes: parsed.data.notes || null,
         fulfillment: 'DELIVERY',
+        orderType: parsed.data.orderType,
         paymentMethod: parsed.data.paymentMethod,
         paymentReceiptUrl: parsed.data.paymentReceiptUrl || null,
         status: 'PENDING',

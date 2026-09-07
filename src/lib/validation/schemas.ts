@@ -21,6 +21,15 @@ export const FULFILLMENT_TYPES = ['PICKUP', 'DELIVERY'] as const
 export const PAYMENT_METHODS = ['CASH', 'GCASH'] as const
 export type PaymentMethodValue = (typeof PAYMENT_METHODS)[number]
 
+export const ORDER_TYPES = ['ADVANCE', 'SNACK_4PM', 'BREAKFAST'] as const
+export type OrderTypeValue = (typeof ORDER_TYPES)[number]
+
+export const ORDER_TYPE_LABELS: Record<OrderTypeValue, string> = {
+  ADVANCE: 'Advance Order',
+  SNACK_4PM: '4PM Snack',
+  BREAKFAST: 'Morning Breakfast',
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
@@ -124,6 +133,7 @@ export const checkoutSchema = z.object({
     .min(2, 'Please enter your name.')
     .max(80, 'Keep the name under 80 characters.'),
   notes: z.string().trim().max(500, 'Keep notes under 500 characters.').optional().or(z.literal('')),
+  orderType: z.enum(ORDER_TYPES).default('ADVANCE'),
   paymentMethod: z.enum(PAYMENT_METHODS).default('CASH'),
   /** Required when paymentMethod = GCASH; must be an uploaded /uploads/... URL. */
   paymentReceiptUrl: z

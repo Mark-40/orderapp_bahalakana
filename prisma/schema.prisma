@@ -94,6 +94,12 @@ enum PaymentMethod {
   GCASH
 }
 
+enum OrderType {
+  ADVANCE
+  SNACK_4PM
+  BREAKFAST
+}
+
 model Order {
   id             String          @id @default(cuid())
   orderNumber    String          @unique
@@ -111,6 +117,9 @@ model Order {
   paymentMethod  PaymentMethod   @default(CASH)
   /// Required when paymentMethod = GCASH — URL to the uploaded receipt image.
   paymentReceiptUrl String?
+  /// When the customer wants the order fulfilled: an advance order, the 4PM
+  /// snack window, or the morning breakfast window.
+  orderType      OrderType       @default(ADVANCE)
   status         OrderStatus     @default(PENDING)
   /// Totals in centavos, frozen at creation time and computed server-side.
   subtotal       Int

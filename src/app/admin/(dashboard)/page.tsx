@@ -48,6 +48,7 @@ export default async function DashboardPage({
         total: true,
         status: true,
         notes: true,
+        orderType: true,
         paymentMethod: true,
         paymentReceiptUrl: true,
         items: {

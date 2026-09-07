@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
+  CalendarClock,
   Check,
   ExternalLink,
   Loader2,
@@ -19,6 +20,7 @@ import { formatMoney, formatMoneyCompact } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { formatTime } from '@/lib/utils'
 import { updateOrderStatusAction } from '@/server/actions/orders'
+import { ORDER_TYPE_LABELS, type OrderTypeValue } from '@/lib/validation/schemas'
 
 export type ChecklistOrderItem = {
   id: string
@@ -37,6 +39,7 @@ export type ChecklistOrder = {
   total: number
   status: string
   notes: string | null
+  orderType: OrderTypeValue
   paymentMethod: 'CASH' | 'GCASH'
   paymentReceiptUrl: string | null
   items: ChecklistOrderItem[]
@@ -215,6 +218,10 @@ export function TodayOrdersChecklist({ orders }: { orders: ChecklistOrder[] }) {
                 </ul>
 
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-500">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 font-semibold text-brand-700">
+                    <CalendarClock className="size-3.5" />
+                    {ORDER_TYPE_LABELS[order.orderType]}
+                  </span>
                   <span className="inline-flex items-center gap-1">
                     {order.paymentMethod === 'GCASH' ? (
                       <QrCode className="size-3.5" />

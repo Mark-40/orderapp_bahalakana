@@ -3,13 +3,13 @@
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Check, QrCode, ShoppingBag, Wallet } from 'lucide-react'
+import { ArrowLeft, CalendarClock, Check, Coffee, QrCode, ShoppingBag, Sun, Wallet } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Textarea } from '@/components/ui/field'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import { checkoutSchema } from '@/lib/validation/schemas'
-import type { PaymentMethodValue } from '@/lib/validation/schemas'
+import type { OrderTypeValue, PaymentMethodValue } from '@/lib/validation/schemas'
 import { cn } from '@/lib/utils'
 import { submitOrderAction } from '@/server/actions/checkout'
 import { useCart } from '@/store/cart'
@@ -33,6 +33,7 @@ export function CheckoutForm() {
   const [errors, setErrors] = React.useState<Errors>({})
   const [formError, setFormError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
+  const [orderType, setOrderType] = React.useState<OrderTypeValue>('ADVANCE')
   const [paymentMethod, setPaymentMethod] = React.useState<PaymentMethodValue>('CASH')
   const [receiptUrl, setReceiptUrl] = React.useState<string | null>(null)
   const [gcashOpen, setGcashOpen] = React.useState(false)
@@ -73,6 +74,7 @@ export function CheckoutForm() {
     const payload = {
       customerName: String(formData.get('customerName') ?? ''),
       notes: String(formData.get('notes') ?? ''),
+      orderType,
       paymentMethod,
       paymentReceiptUrl: receiptUrl ?? '',
       idempotencyKey: idempotencyKey.current,
@@ -208,12 +210,36 @@ export function CheckoutForm() {
           <Textarea
             id="notes"
             name="notes"
-            placeholder="e.g. Please pack separately. Leave at the gate."
+            placeholder="If Advance Order - please specify, tinatamad na ako mag dev"
             invalid={Boolean(errors.notes)}
             maxLength={500}
             className="min-h-20"
           />
         </Field>
+      </section>
+
+      <section className="space-y-3">
+        <h2 className="text-sm font-bold tracking-wide text-ink-500 uppercase">Order type</h2>
+        <div className="grid grid-cols-3 gap-2">
+          <OrderTypeOption
+            selected={orderType === 'ADVANCE'}
+            onSelect={() => setOrderType('ADVANCE')}
+            icon={<CalendarClock className="size-5" />}
+            label="Advance Order"
+          />
+          <OrderTypeOption
+            selected={orderType === 'SNACK_4PM'}
+            onSelect={() => setOrderType('SNACK_4PM')}
+            icon={<Coffee className="size-5" />}
+            label="4PM Snack"
+          />
+          <OrderTypeOption
+            selected={orderType === 'BREAKFAST'}
+            onSelect={() => setOrderType('BREAKFAST')}
+            icon={<Sun className="size-5" />}
+            label="Morning Breakfast"
+          />
+        </div>
       </section>
 
       <section className="space-y-3">
@@ -323,6 +349,35 @@ export function CheckoutForm() {
         onConfirm={(url) => setReceiptUrl(url)}
       />
     </form>
+  )
+}
+
+function OrderTypeOption({
+  selected,
+  onSelect,
+  icon,
+  label,
+}: {
+  selected: boolean
+  onSelect: () => void
+  icon: React.ReactNode
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={cn(
+        'flex min-h-20 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition-colors',
+        selected
+          ? 'border-brand-500 bg-brand-50 text-brand-700 ring-2 ring-brand-500/25'
+          : 'border-cream-200 bg-white text-ink-700 hover:bg-cream-50',
+      )}
+    >
+      {icon}
+      <span className="text-sm font-bold leading-tight">{label}</span>
+    </button>
   )
 }
 

@@ -86,12 +86,12 @@ export function GCashPaymentDialog({
               1. Scan this QR
             </h3>
             <div className="mt-2 rounded-2xl border border-cream-200 bg-white p-3">
-              <div className="relative mx-auto aspect-square max-w-[240px]">
+              <div className="relative mx-auto aspect-[660/1226] w-full max-w-[220px]">
                 <Image
-                  src="/gcash-qr.svg"
+                  src="/gcash-qr.jpeg"
                   alt="Shop GCash QR code"
                   fill
-                  sizes="240px"
+                  sizes="220px"
                   className="rounded-xl object-contain"
                   priority
                 />

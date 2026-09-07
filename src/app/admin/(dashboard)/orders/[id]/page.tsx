@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
   ArrowLeft,
+  CalendarClock,
   ExternalLink,
   Mail,
   MapPin,
@@ -19,7 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
 import { formatDateTime, formatPhone } from '@/lib/utils'
-import type { OrderStatusValue } from '@/lib/validation/schemas'
+import { ORDER_TYPE_LABELS, type OrderStatusValue, type OrderTypeValue } from '@/lib/validation/schemas'
 
 export const dynamic = 'force-dynamic'
 
@@ -185,6 +186,12 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
                     ? (order.deliveryAddress ?? 'For delivery')
                     : 'Pickup at the shop'
                 }
+              />
+
+              <DetailRow
+                icon={<CalendarClock className="size-4" />}
+                label="Order type"
+                value={ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}
               />
 
               <DetailRow
