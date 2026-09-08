@@ -12,6 +12,11 @@ export const metadata: Metadata = {
   description: `Browse the menu and order breakfast, snacks and drinks from ${businessName}.`,
   applicationName: businessName,
   formatDetection: { telephone: false },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: businessName,
+  },
 }
 
 export const viewport: Viewport = {
