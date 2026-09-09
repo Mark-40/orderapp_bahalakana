@@ -4,7 +4,7 @@ import { formatMoneyCompact } from '@/lib/money'
 import type { CheckoutInput } from '@/lib/validation/schemas'
 import { checkoutSchema } from '@/lib/validation/schemas'
 import { nextOrderNumber } from './order-number'
-import { resolveOrderSchedule } from './schedule'
+import { resolveSlot } from './schedule'
 
 /**
  * Order creation.
@@ -115,10 +115,19 @@ export async function createOrder(
   const itemCount = lines.reduce((sum, line) => sum + line.quantity, 0)
 
   const now = new Date()
-  // Which service day this belongs to is the server's call, not the client's:
-  // a breakfast placed after the 4PM cutoff becomes an advance order for the
-  // next morning.
-  const schedule = resolveOrderSchedule(parsed.data.orderType, now)
+  // Which slot the customer picked resolves to an explicit
+  // (fulfillmentDate, fulfillmentPeriod) pair. A hand-crafted request that
+  // names a slot whose window has already closed is refused here, even though
+  // the Zod schema accepted the string — the server, not the browser, decides
+  // which slots are currently open.
+  const resolved = resolveSlot(parsed.data.slot, now)
+  if (!resolved) {
+    return {
+      ok: false,
+      reason: 'VALIDATION',
+      fieldErrors: { slot: ['That fulfillment slot is no longer available. Please pick another.'] },
+    }
+  }
 
   const order = await prisma.$transaction(async (tx) => {
     const orderNumber = await nextOrderNumber(tx, now)
@@ -129,9 +138,8 @@ export async function createOrder(
         customerName: parsed.data.customerName,
         notes: parsed.data.notes || null,
         fulfillment: 'DELIVERY',
-        orderType: parsed.data.orderType,
-        isAdvance: schedule.isAdvance,
-        scheduledFor: schedule.scheduledFor,
+        fulfillmentDate: resolved.fulfillmentDate,
+        fulfillmentPeriod: resolved.fulfillmentPeriod,
         paymentMethod: parsed.data.paymentMethod,
         paymentReceiptUrl: parsed.data.paymentReceiptUrl || null,
         status: 'PENDING',

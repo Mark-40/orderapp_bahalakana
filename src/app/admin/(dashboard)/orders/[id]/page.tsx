@@ -20,9 +20,13 @@ import { StatusUpdater } from '@/components/admin/status-updater'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { prisma } from '@/lib/db'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
-import { BREAKFAST_CUTOFF_LABEL, describeServiceDayLong } from '@/lib/orders/schedule'
+import {
+  PERIOD_LABELS,
+  describeServiceDayLong,
+  isAdvanceOrder,
+} from '@/lib/orders/schedule'
 import { formatDateTime, formatPhone } from '@/lib/utils'
-import { ORDER_TYPE_LABELS, type OrderStatusValue, type OrderTypeValue } from '@/lib/validation/schemas'
+import { type OrderStatusValue } from '@/lib/validation/schemas'
 
 export const dynamic = 'force-dynamic'
 
@@ -195,24 +199,26 @@ export default async function OrderDetailPage({ params }: { params: Promise<{ id
 
               <DetailRow
                 icon={<CalendarClock className="size-4" />}
-                label="Order type"
+                label="Order placed"
+                value={
+                  <p className="text-sm text-ink-700">{formatDateTime(order.createdAt)}</p>
+                }
+              />
+
+              <DetailRow
+                icon={<CalendarClock className="size-4" />}
+                label="Fulfillment"
                 value={
                   <div className="space-y-1">
                     <p className="font-semibold">
-                      {ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}
+                      {describeServiceDayLong(order.fulfillmentDate)} ·{' '}
+                      {PERIOD_LABELS[order.fulfillmentPeriod]}
                     </p>
-                    {order.isAdvance ? (
+                    {isAdvanceOrder(order) ? (
                       <p className="text-xs font-semibold text-sky-800">
-                        Advance order · to serve {describeServiceDayLong(order.scheduledFor)}
-                        {order.orderType === 'BREAKFAST' && order.scheduledFor
-                          ? ` — placed after ${BREAKFAST_CUTOFF_LABEL}, so it is the next morning's breakfast.`
-                          : ''}
+                        Advance order — placed on an earlier day.
                       </p>
-                    ) : (
-                      <p className="text-xs text-ink-500">
-                        For {describeServiceDayLong(order.scheduledFor)}
-                      </p>
-                    )}
+                    ) : null}
                   </div>
                 }
               />

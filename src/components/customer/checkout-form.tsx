@@ -9,13 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Field, Input, Textarea } from '@/components/ui/field'
 import { EmptyState, ErrorState } from '@/components/ui/states'
 import {
-  BREAKFAST_CUTOFF_LABEL,
-  resolveOrderSchedule,
-  rollsOverToTomorrow,
+  availableSlots,
+  type Slot,
+  type SlotId,
 } from '@/lib/orders/schedule'
 import { GCASH_ENABLED, checkoutSchema } from '@/lib/validation/schemas'
-import type { OrderTypeValue, PaymentMethodValue } from '@/lib/validation/schemas'
-import { cn, formatDateShort } from '@/lib/utils'
+import type { PaymentMethodValue } from '@/lib/validation/schemas'
+import { cn } from '@/lib/utils'
 import { submitOrderAction } from '@/server/actions/checkout'
 import { useCart } from '@/store/cart'
 import { GCashPaymentDialog } from './gcash-payment-dialog'
@@ -26,10 +26,14 @@ type Errors = Record<string, string | undefined>
 /**
  * Checkout.
  *
- * Every order is a delivery. The payload carries menu item ids, quantities and
- * the customer's name / address / payment choice. Prices go along only as
- * `shownPrices`, which the server uses to tell the customer what changed —
- * never to compute the total.
+ * The customer picks one of the currently-open slots (today's remaining
+ * window(s) plus tomorrow's), and the payload carries only that slot id.
+ * The server re-reads which slots are currently open and resolves the id to
+ * an explicit fulfillmentDate + fulfillmentPeriod — a stale tab or a
+ * hand-crafted request cannot book a window that has already closed.
+ *
+ * Prices go along only as `shownPrices`, which the server uses to tell the
+ * customer what changed — never to compute the total.
  */
 export function CheckoutForm() {
   const router = useRouter()
@@ -38,43 +42,38 @@ export function CheckoutForm() {
   const [errors, setErrors] = React.useState<Errors>({})
   const [formError, setFormError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
-  const [orderType, setOrderType] = React.useState<OrderTypeValue>('ADVANCE')
   const [paymentMethod, setPaymentMethod] = React.useState<PaymentMethodValue>('CASH')
   const [receiptUrl, setReceiptUrl] = React.useState<string | null>(null)
   const [gcashOpen, setGcashOpen] = React.useState(false)
 
-  // Read after mount only: the server and the browser can disagree about the
-  // clock, and the cutoff notice has to reflect the real current time. Kept
-  // fresh every minute so it flips at 4PM without a reload. The server decides
-  // for real at submit time — this is only here so nothing is a surprise.
-  const [now, setNow] = React.useState<Date | null>(null)
+  // Slot options are derived from the current PH time. Read after mount only
+  // (the server and the browser can disagree about the clock, and we want the
+  // list to reflect what the customer's device says), then refreshed every
+  // minute so it flips the moment a cutoff passes. The server has the last
+  // word at submission — this is only here so nothing is a surprise.
+  const [slots, setSlots] = React.useState<Slot[]>([])
   React.useEffect(() => {
-    const readClock = () => setNow(new Date())
-    // Read once just after mount, then once a minute, so the notice appears
-    // without a reload and flips the moment the cutoff passes.
-    const first = setTimeout(readClock, 0)
-    const timer = setInterval(readClock, 60_000)
-    return () => {
-      clearTimeout(first)
-      clearInterval(timer)
-    }
+    const refresh = () => setSlots(availableSlots(new Date()))
+    refresh()
+    const timer = setInterval(refresh, 60_000)
+    return () => clearInterval(timer)
   }, [])
 
-  const rollsOver = now ? rollsOverToTomorrow(orderType, now) : false
-  const serviceDate = (() => {
-    if (!now) return ''
-    const { scheduledFor } = resolveOrderSchedule(orderType, now)
-    return scheduledFor ? formatDateShort(scheduledFor) : ''
-  })()
+  // The user's explicit pick (null = accept the default). The rendered value
+  // is derived below so a slot that just closed doesn't linger as selected.
+  const [pickedSlotId, setPickedSlotId] = React.useState<SlotId | null>(null)
+  const slotId: SlotId | null =
+    pickedSlotId && slots.some((s) => s.id === pickedSlotId)
+      ? pickedSlotId
+      : (slots[0]?.id ?? null)
 
   // One key per checkout attempt. It makes the submission idempotent, so a
   // double-tap or a retried request can never create two orders.
   const idempotencyKey = React.useRef<string>(newKey())
-  // A submission that succeeded must not be replayed by the back button.
   const submitted = React.useRef(false)
 
-  // Ready to submit: cash always ok, GCash needs an attached receipt.
   const paymentReady = paymentMethod === 'CASH' || (paymentMethod === 'GCASH' && !!receiptUrl)
+  const slotReady = slotId !== null
 
   function selectPaymentMethod(method: PaymentMethodValue) {
     if (method === 'GCASH' && !GCASH_ENABLED) return
@@ -91,6 +90,11 @@ export function CheckoutForm() {
     event.preventDefault()
     if (submitting || submitted.current) return
 
+    if (!slotId) {
+      setErrors((prev) => ({ ...prev, slot: 'Please pick when you want your order.' }))
+      return
+    }
+
     // For GCash, force the customer through the QR/receipt flow before submit.
     if (paymentMethod === 'GCASH' && !receiptUrl) {
       setGcashOpen(true)
@@ -104,7 +108,7 @@ export function CheckoutForm() {
     const payload = {
       customerName: String(formData.get('customerName') ?? ''),
       notes: String(formData.get('notes') ?? ''),
-      orderType,
+      slot: slotId,
       paymentMethod,
       paymentReceiptUrl: receiptUrl ?? '',
       idempotencyKey: idempotencyKey.current,
@@ -149,7 +153,6 @@ export function CheckoutForm() {
           if (removable.length > 0) removeMany(removable)
           setFormError(result.messages.join(' '))
           result.messages.forEach((message) => toast.warning(message))
-          // Retrying is a new attempt, so it needs a new key.
           idempotencyKey.current = newKey()
           break
         }
@@ -240,7 +243,7 @@ export function CheckoutForm() {
           <Textarea
             id="notes"
             name="notes"
-            placeholder="If Advance Order - please specify, tinatamad na ako mag dev"
+            placeholder="Anything the shop should know?"
             invalid={Boolean(errors.notes)}
             maxLength={500}
             className="min-h-20"
@@ -249,40 +252,38 @@ export function CheckoutForm() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-bold tracking-wide text-ink-500 uppercase">Order type</h2>
-        <div className="grid grid-cols-3 gap-2">
-          <OrderTypeOption
-            selected={orderType === 'ADVANCE'}
-            onSelect={() => setOrderType('ADVANCE')}
-            icon={<CalendarClock className="size-5" />}
-            label="Advance Order"
-          />
-          <OrderTypeOption
-            selected={orderType === 'SNACK_4PM'}
-            onSelect={() => setOrderType('SNACK_4PM')}
-            icon={<Coffee className="size-5" />}
-            label="4PM Snack"
-          />
-          <OrderTypeOption
-            selected={orderType === 'BREAKFAST'}
-            onSelect={() => setOrderType('BREAKFAST')}
-            icon={<Sun className="size-5" />}
-            label="Morning Breakfast"
-          />
+        <div>
+          <h2 className="text-sm font-bold tracking-wide text-ink-500 uppercase">
+            When do you want your order?
+          </h2>
+          <p className="mt-1 text-xs text-ink-500">
+            Pick a slot. Today&rsquo;s windows close at their cutoff; tomorrow&rsquo;s stay open
+            until midnight.
+          </p>
         </div>
 
-        {rollsOver ? (
-          <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900">
-            <CalendarClock className="mt-0.5 size-5 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="font-bold">This becomes an advance order for tomorrow</p>
-              <p className="mt-0.5 text-xs leading-relaxed">
-                It is already past {BREAKFAST_CUTOFF_LABEL}, so today&rsquo;s breakfast service has
-                closed. The shop will prepare this order tomorrow morning
-                {serviceDate ? ` — ${serviceDate}` : ''}.
-              </p>
-            </div>
+        {slots.length === 0 ? (
+          <div className="rounded-2xl border border-cream-200 bg-white p-3 text-sm text-ink-500">
+            Loading available slots...
           </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {slots.map((slot) => (
+              <SlotOption
+                key={slot.id}
+                slot={slot}
+                selected={slotId === slot.id}
+                onSelect={() => {
+                  setPickedSlotId(slot.id)
+                  setErrors((prev) => ({ ...prev, slot: undefined }))
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {errors.slot ? (
+          <p className="text-xs font-semibold text-chili-600">{errors.slot}</p>
         ) : null}
       </section>
 
@@ -377,13 +378,15 @@ export function CheckoutForm() {
           block
           size="lg"
           loading={submitting}
-          disabled={!paymentReady}
+          disabled={!paymentReady || !slotReady}
         >
           {submitting
             ? 'Placing your order'
             : paymentMethod === 'GCASH' && !receiptUrl
               ? 'Attach receipt to continue'
-              : 'Submit Order'}
+              : !slotReady
+                ? 'Pick a fulfillment slot'
+                : 'Submit Order'}
         </Button>
         <Button asChild variant="ghost" block size="sm" className="mt-1">
           <Link href="/">
@@ -406,31 +409,42 @@ export function CheckoutForm() {
   )
 }
 
-function OrderTypeOption({
+function SlotOption({
+  slot,
   selected,
   onSelect,
-  icon,
-  label,
 }: {
+  slot: Slot
   selected: boolean
   onSelect: () => void
-  icon: React.ReactNode
-  label: string
 }) {
+  const Icon = slot.period === 'BREAKFAST' ? Sun : Coffee
+  const [day, period] = slot.label.split(' – ')
   return (
     <button
       type="button"
       onClick={onSelect}
       aria-pressed={selected}
       className={cn(
-        'flex min-h-20 flex-col items-start justify-center gap-1 rounded-xl border px-3 py-3 text-left transition-colors',
+        'flex items-start gap-3 rounded-xl border px-3 py-3 text-left transition-colors',
         selected
           ? 'border-brand-500 bg-brand-50 text-brand-700 ring-2 ring-brand-500/25'
           : 'border-cream-200 bg-white text-ink-700 hover:bg-cream-50',
       )}
     >
-      {icon}
-      <span className="text-sm font-bold leading-tight">{label}</span>
+      <Icon className="mt-0.5 size-5 shrink-0" />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold leading-tight">{period}</p>
+        <p className="mt-0.5 text-xs font-semibold text-ink-500">
+          {day}
+          {slot.isAdvance ? (
+            <span className="ml-1.5 inline-flex items-center gap-1 rounded-full bg-sky-100 px-1.5 py-0.5 font-semibold text-sky-800">
+              <CalendarClock className="size-3" />
+              Advance
+            </span>
+          ) : null}
+        </p>
+      </div>
     </button>
   )
 }
@@ -481,7 +495,6 @@ function firstErrors(fieldErrors: Record<string, string[] | undefined>): Errors 
 }
 
 function focusFirstInvalid(form: HTMLFormElement) {
-  // Defer so React has painted the aria-invalid attributes first.
   requestAnimationFrame(() => {
     form.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()
   })

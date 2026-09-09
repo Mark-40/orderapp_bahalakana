@@ -19,7 +19,7 @@ import { prisma } from '@/lib/db'
 import { REVENUE_STATUSES, getBestSellers, getDailySales, getDashboardStats } from '@/lib/dashboard/stats'
 import { resolveRange, toDateInputValue } from '@/lib/dashboard/date-range'
 import { formatMoney, formatMoneyCompact } from '@/lib/money'
-import { phStartOfDay } from '@/lib/orders/schedule'
+import { phAddDays, phStartOfDay } from '@/lib/orders/schedule'
 import { formatDateShort } from '@/lib/utils'
 
 export const metadata: Metadata = { title: 'Dashboard' }
@@ -43,9 +43,8 @@ export default async function DashboardPage({
     total: true,
     status: true,
     notes: true,
-    orderType: true,
-    isAdvance: true,
-    scheduledFor: true,
+    fulfillmentDate: true,
+    fulfillmentPeriod: true,
     paymentMethod: true,
     paymentReceiptUrl: true,
     items: {
@@ -54,31 +53,37 @@ export default async function DashboardPage({
     },
   }
 
+  // "Advance orders" are those whose fulfillment day is later than the day
+  // they were placed — the operationally-interesting subset that the shop has
+  // to remember about ahead of time.
+  const today = phStartOfDay(new Date())
+  const tomorrow = phAddDays(today, 1)
+
   const [stats, bestSellers, dailySales, recentOrders, openOrders, advanceOrders] =
     await Promise.all([
       getDashboardStats(range),
       getBestSellers(range, 5),
       getDailySales(range),
+      // Orders being fulfilled inside the current range — the workload for the
+      // period the admin has selected.
       prisma.order.findMany({
-        where: { createdAt: { gte: range.from, lte: range.to } },
-        orderBy: { createdAt: 'desc' },
+        where: { fulfillmentDate: { gte: range.from, lte: range.to } },
+        orderBy: [{ fulfillmentPeriod: 'asc' }, { createdAt: 'asc' }],
         take: 20,
         select: checklistFields,
       }),
       prisma.order.count({
         where: { status: { in: ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'] } },
       }),
-      // Advance orders still to be served, soonest first — independent of the
-      // range filter, because an advance order is placed on one day and
-      // prepared on another. A breakfast ordered after 4PM lands here as
-      // tomorrow's; the ones whose date only lives in the notes come last.
+      // Still-to-be-served advance orders (fulfillmentDate >= tomorrow, i.e.
+      // strictly future days). Sorted soonest first, independently of the
+      // range filter above.
       prisma.order.findMany({
         where: {
-          isAdvance: true,
+          fulfillmentDate: { gte: tomorrow },
           status: { notIn: ['COMPLETED', 'CANCELLED'] },
-          OR: [{ scheduledFor: null }, { scheduledFor: { gte: phStartOfDay(new Date()) } }],
         },
-        orderBy: [{ scheduledFor: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+        orderBy: [{ fulfillmentDate: 'asc' }, { fulfillmentPeriod: 'asc' }, { createdAt: 'asc' }],
         take: 20,
         select: checklistFields,
       }),

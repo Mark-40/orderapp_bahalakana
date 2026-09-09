@@ -6,9 +6,13 @@ import { Button } from '@/components/ui/button'
 import { OrderStatusBadge } from '@/components/admin/order-status-badge'
 import { OrderSummary } from '@/components/customer/order-summary'
 import { prisma } from '@/lib/db'
-import { BREAKFAST_CUTOFF_LABEL, describeServiceDay } from '@/lib/orders/schedule'
+import {
+  describeServiceDay,
+  describeSlot,
+  isAdvanceOrder,
+  PERIOD_LABELS,
+} from '@/lib/orders/schedule'
 import { formatDateShort, formatDateTime } from '@/lib/utils'
-import { ORDER_TYPE_LABELS, type OrderTypeValue } from '@/lib/validation/schemas'
 
 // Status changes as the shop works the order, so never serve this from cache.
 export const dynamic = 'force-dynamic'
@@ -38,9 +42,8 @@ export default async function OrderConfirmationPage({
       customerName: true,
       notes: true,
       status: true,
-      orderType: true,
-      isAdvance: true,
-      scheduledFor: true,
+      fulfillmentDate: true,
+      fulfillmentPeriod: true,
       paymentMethod: true,
       paymentReceiptUrl: true,
       subtotal: true,
@@ -52,13 +55,11 @@ export default async function OrderConfirmationPage({
     },
   })
 
-  // Renders the shared not-found page. Note that Next 16 has already flushed
-  // the response shell for a dynamically-rendered route by this point, so the
-  // HTTP status stays 200 even though the not-found UI is what the visitor
-  // sees. The page is noindex'd above, so nothing depends on the status code.
   if (!order) notFound()
 
   const firstName = order.customerName.split(' ')[0] ?? order.customerName
+  const advance = isAdvanceOrder(order)
+  const scheduledLabel = describeSlot(order.fulfillmentDate, order.fulfillmentPeriod)
 
   return (
     <div className="min-h-dvh px-4 py-8">
@@ -76,21 +77,17 @@ export default async function OrderConfirmationPage({
           </p>
         </div>
 
-        {order.isAdvance && order.scheduledFor ? (
-          <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-3.5 text-sky-900">
-            <CalendarClock className="mt-0.5 size-5 shrink-0" aria-hidden />
-            <div className="min-w-0 flex-1 text-sm">
-              <p className="font-bold">Advance order · {describeServiceDay(order.scheduledFor)}</p>
-              <p className="mt-0.5 text-xs leading-relaxed">
-                {order.orderType === 'BREAKFAST'
-                  ? `Placed after ${BREAKFAST_CUTOFF_LABEL}, so it is booked for the ${formatDateShort(
-                      order.scheduledFor,
-                    )} breakfast service.`
-                  : `Booked for ${formatDateShort(order.scheduledFor)}.`}
-              </p>
-            </div>
+        <div className="flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-3.5 text-sky-900">
+          <CalendarClock className="mt-0.5 size-5 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="text-xs font-semibold tracking-wide uppercase">Scheduled for</p>
+            <p className="mt-0.5 font-bold">{scheduledLabel}</p>
+            <p className="mt-0.5 text-xs">
+              {formatDateShort(order.fulfillmentDate)} · {PERIOD_LABELS[order.fulfillmentPeriod]}
+              {advance ? ' · Advance order' : ''}
+            </p>
           </div>
-        ) : null}
+        </div>
 
         <div className="rounded-2xl border border-cream-200 bg-white p-4 shadow-[var(--shadow-soft)]">
           <div className="flex items-start justify-between gap-3">
@@ -108,8 +105,8 @@ export default async function OrderConfirmationPage({
           <dl className="mt-3 space-y-2 border-t border-cream-200 pt-3 text-sm">
             <div className="flex items-center gap-2 text-ink-500">
               <Clock className="size-4 shrink-0" aria-hidden />
-              <dt className="sr-only">Placed at</dt>
-              <dd>{formatDateTime(order.createdAt)}</dd>
+              <dt className="sr-only">Order placed</dt>
+              <dd>Placed {formatDateTime(order.createdAt)}</dd>
             </div>
             <div className="flex items-center gap-2 text-ink-500">
               <Truck className="size-4 shrink-0" aria-hidden />
@@ -118,10 +115,10 @@ export default async function OrderConfirmationPage({
             </div>
             <div className="flex items-center gap-2 text-ink-500">
               <CalendarClock className="size-4 shrink-0" aria-hidden />
-              <dt className="sr-only">Order type</dt>
+              <dt className="sr-only">Fulfillment slot</dt>
               <dd>
-                {ORDER_TYPE_LABELS[order.orderType as OrderTypeValue]}
-                {order.scheduledFor ? ` · ${describeServiceDay(order.scheduledFor)}` : ''}
+                {describeServiceDay(order.fulfillmentDate)} ·{' '}
+                {PERIOD_LABELS[order.fulfillmentPeriod]}
               </dd>
             </div>
             <div className="flex items-center gap-2 text-ink-500">

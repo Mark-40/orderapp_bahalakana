@@ -94,10 +94,12 @@ enum PaymentMethod {
   GCASH
 }
 
-enum OrderType {
-  ADVANCE
-  SNACK_4PM
+/// Which service window an order is prepared for. The specific slot
+/// (today/tomorrow, morning/afternoon) is the combination of `fulfillmentDate`
+/// and this period — the period alone says WHICH window, the date says WHICH DAY.
+enum FulfillmentPeriod {
   BREAKFAST
+  SNACK
 }
 
 model Order {
@@ -117,17 +119,13 @@ model Order {
   paymentMethod  PaymentMethod   @default(CASH)
   /// Required when paymentMethod = GCASH — URL to the uploaded receipt image.
   paymentReceiptUrl String?
-  /// When the customer wants the order fulfilled: an advance order, the 4PM
-  /// snack window, or the morning breakfast window.
-  orderType      OrderType       @default(ADVANCE)
-  /// True when the order is NOT for today's service — either the customer
-  /// chose ADVANCE, or they ordered breakfast after the 4PM cutoff, which
-  /// belongs to the next morning. Decided server-side (lib/orders/schedule).
-  isAdvance      Boolean         @default(false)
-  /// Philippine-time midnight of the service day the order is prepared for.
-  /// Null for a customer-chosen ADVANCE order, where the wanted date lives in
-  /// the notes rather than being derivable from the clock.
-  scheduledFor   DateTime?
+  /// Philippine-time midnight of the day the order is to be fulfilled. Set
+  /// explicitly by the customer's slot choice at checkout; never inferred from
+  /// `createdAt` at query time. An order created yesterday for today's snack
+  /// carries today's midnight here.
+  fulfillmentDate    DateTime
+  /// Which service window on that day the order is for.
+  fulfillmentPeriod  FulfillmentPeriod
   status         OrderStatus     @default(PENDING)
   /// Totals in centavos, frozen at creation time and computed server-side.
   subtotal       Int
@@ -142,7 +140,7 @@ model Order {
 
   @@index([status, createdAt])
   @@index([createdAt])
-  @@index([isAdvance, scheduledFor])
+  @@index([fulfillmentDate, fulfillmentPeriod])
   @@map("orders")
 }
 

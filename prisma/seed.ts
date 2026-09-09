@@ -2,8 +2,8 @@ import path from 'node:path'
 import bcrypt from 'bcryptjs'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../src/generated/prisma/client.js'
-import { resolveOrderSchedule } from '../src/lib/orders/schedule.js'
-import { ORDER_TYPES } from '../src/lib/validation/schemas.js'
+import { phAddDays, phStartOfDay } from '../src/lib/orders/schedule.js'
+import { FULFILLMENT_PERIODS } from '../src/lib/validation/schemas.js'
 
 try {
   process.loadEnvFile(path.join(process.cwd(), '.env'))
@@ -239,11 +239,13 @@ async function seedSampleOrders(): Promise<number> {
     const firstName = customer[0].split(' ')[0]!.toLowerCase()
 
     const paymentMethod = i % 2 === 0 ? 'CASH' : 'GCASH'
-    // Cycle the three windows, then let the same rule the app uses decide the
-    // service day — so a seeded breakfast placed after 4PM lands in the
-    // advance-orders tab, exactly as a real one would.
-    const orderType = ORDER_TYPES[i % ORDER_TYPES.length]!
-    const schedule = resolveOrderSchedule(orderType, createdAt)
+    // Cycle the two periods, and mix in a few advance orders (fulfilled a day
+    // later than they were placed) so the advance-orders view has real rows.
+    const fulfillmentPeriod = FULFILLMENT_PERIODS[i % FULFILLMENT_PERIODS.length]!
+    const isAdvance = i % 5 === 0 // every 5th order is booked for tomorrow
+    const fulfillmentDate = isAdvance
+      ? phAddDays(phStartOfDay(createdAt), 1)
+      : phStartOfDay(createdAt)
 
     await prisma.order.create({
       data: {
@@ -254,9 +256,8 @@ async function seedSampleOrders(): Promise<number> {
         customerEmail: i % 3 === 0 ? `${firstName}@example.com` : null,
         notes: i % 4 === 0 ? 'Please leave at the gate.' : null,
         fulfillment: 'DELIVERY',
-        orderType,
-        isAdvance: schedule.isAdvance,
-        scheduledFor: schedule.scheduledFor,
+        fulfillmentDate,
+        fulfillmentPeriod,
         paymentMethod,
         paymentReceiptUrl: paymentMethod === 'GCASH' ? '/gcash-qr.jpeg' : null,
         status,

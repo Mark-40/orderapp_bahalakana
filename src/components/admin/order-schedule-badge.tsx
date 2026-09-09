@@ -1,40 +1,43 @@
 import { CalendarClock, Coffee, Sun } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { describeServiceDay } from '@/lib/orders/schedule'
-import { ORDER_TYPE_LABELS, type OrderTypeValue } from '@/lib/validation/schemas'
+import {
+  type FulfillmentPeriod,
+  PERIOD_LABELS,
+  describeServiceDay,
+  isAdvanceOrder,
+} from '@/lib/orders/schedule'
 
-const TYPE_ICON: Record<OrderTypeValue, typeof CalendarClock> = {
-  ADVANCE: CalendarClock,
-  SNACK_4PM: Coffee,
+const PERIOD_ICON: Record<FulfillmentPeriod, typeof CalendarClock> = {
   BREAKFAST: Sun,
+  SNACK: Coffee,
 }
 
 export type OrderScheduleFields = {
-  orderType: OrderTypeValue | string
-  isAdvance: boolean
-  scheduledFor: Date | string | null
+  fulfillmentDate: Date | string
+  fulfillmentPeriod: FulfillmentPeriod
+  createdAt: Date | string
 }
 
 /**
- * The order's service window, plus — for an advance order — the day it is
- * actually for. A breakfast ordered after the 4PM cutoff shows as
- * "Morning Breakfast" alongside "Advance · Tomorrow", so the shop can see at a
- * glance that it is not part of today's prep.
+ * The service window an order is prepared for — day plus period — plus a
+ * secondary "Advance" chip when the order was placed on an earlier day than
+ * its fulfillment. Reading the primary badge alone tells the shop when to
+ * cook; the Advance chip flags that this was booked ahead.
  */
 export function OrderScheduleBadge({ order }: { order: OrderScheduleFields }) {
-  const type = order.orderType as OrderTypeValue
-  const Icon = TYPE_ICON[type] ?? CalendarClock
+  const Icon = PERIOD_ICON[order.fulfillmentPeriod] ?? CalendarClock
+  const advance = isAdvanceOrder(order)
 
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <Badge tone="brand">
         <Icon className="size-3.5" />
-        {ORDER_TYPE_LABELS[type] ?? order.orderType}
+        {describeServiceDay(order.fulfillmentDate)} · {PERIOD_LABELS[order.fulfillmentPeriod]}
       </Badge>
-      {order.isAdvance ? (
+      {advance ? (
         <Badge tone="info">
           <CalendarClock className="size-3.5" />
-          Advance · {describeServiceDay(order.scheduledFor)}
+          Advance
         </Badge>
       ) : null}
     </span>

@@ -12,8 +12,9 @@ import { prisma } from '@/lib/db'
 import type { Prisma } from '@/generated/prisma/client'
 import { endOfDay, startOfDay } from '@/lib/dashboard/date-range'
 import { formatMoneyCompact } from '@/lib/money'
+import { type FulfillmentPeriod, phAddDays, phStartOfDay } from '@/lib/orders/schedule'
 import { formatDateTime, formatPhone } from '@/lib/utils'
-import { orderFilterSchema, type OrderTypeValue } from '@/lib/validation/schemas'
+import { orderFilterSchema } from '@/lib/validation/schemas'
 
 export const metadata: Metadata = { title: 'Orders' }
 export const dynamic = 'force-dynamic'
@@ -29,17 +30,18 @@ type OrderRow = {
   itemCount: number
   total: number
   status: string
-  orderType: OrderTypeValue
-  isAdvance: boolean
-  scheduledFor: Date | null
+  fulfillmentDate: Date
+  fulfillmentPeriod: FulfillmentPeriod
 }
 
 function parseDate(value: string | undefined): Date | null {
   if (!value) return null
   const [y, m, d] = value.split('-').map(Number)
   if (!y || !m || !d) return null
-  const date = new Date(y, m - 1, d)
-  return Number.isNaN(date.getTime()) ? null : date
+  // Interpret the YYYY-MM-DD as a PH-calendar date. Anchor at PH noon so
+  // rounding to PH midnight lands on the intended day.
+  const noonPh = new Date(Date.UTC(y, m - 1, d, 12) - 8 * 60 * 60 * 1000)
+  return Number.isNaN(noonPh.getTime()) ? null : noonPh
 }
 
 export default async function AdminOrdersPage({
@@ -53,6 +55,8 @@ export default async function AdminOrdersPage({
     status: typeof raw.status === 'string' ? raw.status : undefined,
     from: typeof raw.from === 'string' ? raw.from : undefined,
     to: typeof raw.to === 'string' ? raw.to : undefined,
+    fdate: typeof raw.fdate === 'string' ? raw.fdate : undefined,
+    period: typeof raw.period === 'string' ? raw.period : undefined,
     view: typeof raw.view === 'string' ? raw.view : undefined,
     page: typeof raw.page === 'string' ? raw.page : 1,
   })
@@ -65,26 +69,41 @@ export default async function AdminOrdersPage({
         status: undefined,
         from: undefined,
         to: undefined,
+        fdate: undefined,
+        period: undefined,
         view: 'all' as const,
         page: 1,
       }
 
-  const from = parseDate(filters.from)
-  const to = parseDate(filters.to)
+  const now = new Date()
   const advanceView = filters.view === 'advance'
 
-  // Everything except the tab. The tab counts are computed against this, so
-  // each tab shows how many orders match the *current* search and dates.
+  // Resolve the fulfillment-date filter. Presets (today/tomorrow) short-circuit
+  // the custom from/to. Otherwise from/to are read as PH-calendar dates.
+  const fdateBounds: { gte?: Date; lte?: Date } | null = (() => {
+    if (filters.fdate === 'today') {
+      const start = phStartOfDay(now)
+      return { gte: start, lte: new Date(phAddDays(start, 1).getTime() - 1) }
+    }
+    if (filters.fdate === 'tomorrow') {
+      const start = phAddDays(phStartOfDay(now), 1)
+      return { gte: start, lte: new Date(phAddDays(start, 1).getTime() - 1) }
+    }
+    const from = parseDate(filters.from)
+    const to = parseDate(filters.to)
+    if (!from && !to) return null
+    return {
+      ...(from ? { gte: startOfDay(from) } : {}),
+      ...(to ? { lte: endOfDay(to) } : {}),
+    }
+  })()
+
+  // Everything except the tab. Tab counts are computed against this, so each
+  // tab shows how many orders match the *current* search and filters.
   const baseWhere: Prisma.OrderWhereInput = {
     ...(filters.status ? { status: filters.status } : {}),
-    ...(from || to
-      ? {
-          createdAt: {
-            ...(from ? { gte: startOfDay(from) } : {}),
-            ...(to ? { lte: endOfDay(to) } : {}),
-          },
-        }
-      : {}),
+    ...(filters.period ? { fulfillmentPeriod: filters.period } : {}),
+    ...(fdateBounds ? { fulfillmentDate: fdateBounds } : {}),
     ...(filters.q
       ? {
           OR: [
@@ -96,26 +115,36 @@ export default async function AdminOrdersPage({
       : {}),
   }
 
+  // "Advance" = fulfillment day strictly after the day the order was placed.
+  // Prisma cannot express column-vs-column comparisons directly, so this is
+  // approximated as "fulfillmentDate >= tomorrow's PH midnight". Correct in
+  // every case except an order placed and fulfilled on the same day (which is
+  // never advance anyway).
+  const tomorrow = phAddDays(phStartOfDay(now), 1)
   const where: Prisma.OrderWhereInput = advanceView
-    ? { ...baseWhere, isAdvance: true }
+    ? { ...baseWhere, fulfillmentDate: { ...(fdateBounds ?? {}), gte: tomorrow } }
     : baseWhere
 
   const [allCount, advanceCount] = await Promise.all([
     prisma.order.count({ where: baseWhere }),
-    prisma.order.count({ where: { ...baseWhere, isAdvance: true } }),
+    prisma.order.count({
+      where: {
+        ...baseWhere,
+        fulfillmentDate: { ...(fdateBounds ?? {}), gte: tomorrow },
+      },
+    }),
   ])
 
   const total = advanceView ? advanceCount : allCount
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
-  // Clamp so a stale ?page=99 link still renders a real page of results.
   const page = Math.min(filters.page, pageCount)
 
   const orders = await prisma.order.findMany({
     where,
-    // Advance orders read best as a schedule — soonest service day first, with
-    // the "date is in the notes" ones last. Everything else is newest first.
+    // Advance view sorts by soonest fulfillment day first; regular view by
+    // newest-placed first.
     orderBy: advanceView
-      ? [{ scheduledFor: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }]
+      ? [{ fulfillmentDate: 'asc' }, { fulfillmentPeriod: 'asc' }, { createdAt: 'asc' }]
       : { createdAt: 'desc' },
     skip: (page - 1) * PAGE_SIZE,
     take: PAGE_SIZE,
@@ -128,9 +157,8 @@ export default async function AdminOrdersPage({
       itemCount: true,
       total: true,
       status: true,
-      orderType: true,
-      isAdvance: true,
-      scheduledFor: true,
+      fulfillmentDate: true,
+      fulfillmentPeriod: true,
     },
   })
 
@@ -154,10 +182,7 @@ export default async function AdminOrdersPage({
     },
     {
       key: 'schedule',
-      header: advanceView ? 'Service day' : 'Order type',
-      // In the advance tab the service day IS the point of the list, so it
-      // stays visible even on a narrow table.
-      ...(advanceView ? {} : { hideBelow: 'lg' as const }),
+      header: 'Fulfillment',
       cell: (row) => <OrderScheduleBadge order={row} />,
     },
     {
@@ -194,7 +219,9 @@ export default async function AdminOrdersPage({
     },
   ]
 
-  const filtered = Boolean(filters.q || filters.status || filters.from || filters.to)
+  const filtered = Boolean(
+    filters.q || filters.status || filters.period || filters.fdate || filters.from || filters.to,
+  )
 
   return (
     <div className="space-y-5">
@@ -205,7 +232,7 @@ export default async function AdminOrdersPage({
         <p className="mt-0.5 text-sm text-ink-500">
           {total} {advanceView ? 'advance ' : ''}order{total === 1 ? '' : 's'}
           {filtered ? ' matching your filters' : ' in total'}
-          {advanceView ? ' · soonest service day first' : ''}
+          {advanceView ? ' · soonest fulfillment first' : ''}
         </p>
       </header>
 
@@ -216,6 +243,8 @@ export default async function AdminOrdersPage({
           status: filters.status,
           from: filters.from,
           to: filters.to,
+          fdate: filters.fdate,
+          period: filters.period,
         }}
         counts={{ all: allCount, advance: advanceCount }}
       />
@@ -223,6 +252,8 @@ export default async function AdminOrdersPage({
       <OrderFilters
         q={filters.q ?? ''}
         status={filters.status ?? ''}
+        fdate={filters.fdate ?? ''}
+        period={filters.period ?? ''}
         from={filters.from ?? ''}
         to={filters.to ?? ''}
         view={filters.view}
@@ -247,7 +278,7 @@ export default async function AdminOrdersPage({
               filtered
                 ? 'Try clearing the search or widening the date range.'
                 : advanceView
-                  ? 'Advance orders — and any breakfast ordered after 4PM, which is served the next morning — will appear here.'
+                  ? 'Orders booked for a future day will show up here as soon as they come in.'
                   : 'Orders placed by customers will show up here right away.'
             }
           />
@@ -264,7 +295,8 @@ export default async function AdminOrdersPage({
               </div>
               <p className="mt-1 truncate text-sm text-ink-700">{row.customerName}</p>
               <p className="tabular mt-0.5 text-xs text-ink-500">
-                {row.itemCount} item{row.itemCount === 1 ? '' : 's'} · {formatDateTime(row.createdAt)}
+                {row.itemCount} item{row.itemCount === 1 ? '' : 's'} · placed{' '}
+                {formatDateTime(row.createdAt)}
               </p>
               <div className="mt-1.5">
                 <OrderScheduleBadge order={row} />

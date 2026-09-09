@@ -38,14 +38,21 @@ export type PaymentMethodValue = (typeof PAYMENT_METHODS)[number]
  */
 export const GCASH_ENABLED = false
 
-export const ORDER_TYPES = ['ADVANCE', 'SNACK_4PM', 'BREAKFAST'] as const
-export type OrderTypeValue = (typeof ORDER_TYPES)[number]
+export const FULFILLMENT_PERIODS = ['BREAKFAST', 'SNACK'] as const
+export type FulfillmentPeriodValue = (typeof FULFILLMENT_PERIODS)[number]
 
-export const ORDER_TYPE_LABELS: Record<OrderTypeValue, string> = {
-  ADVANCE: 'Advance Order',
-  SNACK_4PM: '4PM Snack',
+export const FULFILLMENT_PERIOD_LABELS: Record<FulfillmentPeriodValue, string> = {
   BREAKFAST: 'Morning Breakfast',
+  SNACK: '4PM Snack',
 }
+
+export const SLOT_IDS = [
+  'TODAY_BREAKFAST',
+  'TODAY_SNACK',
+  'TOMORROW_BREAKFAST',
+  'TOMORROW_SNACK',
+] as const
+export type SlotIdValue = (typeof SLOT_IDS)[number]
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -150,7 +157,14 @@ export const checkoutSchema = z.object({
     .min(2, 'Please enter your name.')
     .max(80, 'Keep the name under 80 characters.'),
   notes: z.string().trim().max(500, 'Keep notes under 500 characters.').optional().or(z.literal('')),
-  orderType: z.enum(ORDER_TYPES).default('ADVANCE'),
+  /**
+   * Which fulfillment slot the customer picked. The server re-checks that this
+   * slot is still open at submission time; a slot id whose window has closed
+   * is rejected, so a stale tab or a tampered payload cannot book an already-
+   * past window. The date + period the order stores are derived from this id,
+   * never taken directly from the client.
+   */
+  slot: z.enum(SLOT_IDS),
   paymentMethod: z.enum(PAYMENT_METHODS).default('CASH'),
   /** Required when paymentMethod = GCASH; must be an uploaded /uploads/... URL. */
   paymentReceiptUrl: z
@@ -190,15 +204,25 @@ export const updateOrderStatusSchema = z.object({
   status: z.enum(ORDER_STATUSES),
 })
 
-/** Tabs on the admin orders list. `advance` shows only advance orders. */
+/** Tabs on the admin orders list. `advance` shows orders whose fulfillment day
+ * is after the day they were placed — the operationally-interesting subset. */
 export const ORDER_VIEWS = ['all', 'advance'] as const
 export type OrderViewValue = (typeof ORDER_VIEWS)[number]
+
+/** Shortcut values for the fulfillment-date filter; `custom` uses `from`/`to`. */
+export const FULFILLMENT_DATE_PRESETS = ['today', 'tomorrow', 'custom'] as const
+export type FulfillmentDatePreset = (typeof FULFILLMENT_DATE_PRESETS)[number]
 
 export const orderFilterSchema = z.object({
   q: z.string().trim().max(80).optional(),
   status: z.enum(ORDER_STATUSES).optional(),
+  /** Fulfillment-date filter: YYYY-MM-DD, interpreted in PH time. */
   from: z.string().optional(),
   to: z.string().optional(),
+  /** Optional shortcut; when set, overrides `from`/`to`. */
+  fdate: z.enum(FULFILLMENT_DATE_PRESETS).optional(),
+  /** Fulfillment-period filter. Omit for all periods. */
+  period: z.enum(FULFILLMENT_PERIODS).optional(),
   view: z.enum(ORDER_VIEWS).default('all'),
   page: z.coerce.number().int().min(1).default(1),
 })

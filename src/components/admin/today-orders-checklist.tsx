@@ -20,8 +20,12 @@ import { formatMoney, formatMoneyCompact } from '@/lib/money'
 import { cn } from '@/lib/utils'
 import { formatTime } from '@/lib/utils'
 import { updateOrderStatusAction } from '@/server/actions/orders'
-import { describeServiceDay } from '@/lib/orders/schedule'
-import { ORDER_TYPE_LABELS, type OrderTypeValue } from '@/lib/validation/schemas'
+import {
+  type FulfillmentPeriod,
+  PERIOD_LABELS,
+  describeServiceDay,
+  isAdvanceOrder,
+} from '@/lib/orders/schedule'
 
 export type ChecklistOrderItem = {
   id: string
@@ -40,9 +44,8 @@ export type ChecklistOrder = {
   total: number
   status: string
   notes: string | null
-  orderType: OrderTypeValue
-  isAdvance: boolean
-  scheduledFor: Date | string | null
+  fulfillmentDate: Date | string
+  fulfillmentPeriod: FulfillmentPeriod
   paymentMethod: 'CASH' | 'GCASH'
   paymentReceiptUrl: string | null
   items: ChecklistOrderItem[]
@@ -231,12 +234,13 @@ export function TodayOrdersChecklist({
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-500">
                   <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 font-semibold text-brand-700">
                     <CalendarClock className="size-3.5" />
-                    {ORDER_TYPE_LABELS[order.orderType]}
+                    {describeServiceDay(order.fulfillmentDate)} ·{' '}
+                    {PERIOD_LABELS[order.fulfillmentPeriod]}
                   </span>
-                  {order.isAdvance ? (
+                  {isAdvanceOrder(order) ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 font-semibold text-sky-800">
                       <CalendarClock className="size-3.5" />
-                      Advance · {describeServiceDay(order.scheduledFor)}
+                      Advance
                     </span>
                   ) : null}
                   <span className="inline-flex items-center gap-1">

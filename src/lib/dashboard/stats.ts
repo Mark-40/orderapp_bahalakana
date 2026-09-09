@@ -1,9 +1,15 @@
 import 'server-only'
 import { prisma } from '@/lib/db'
+import { phDayKey } from '@/lib/orders/schedule'
 import type { DateRange } from './date-range'
 
 /**
  * All dashboard numbers are computed in the database, never in the browser.
+ *
+ * Statistics are keyed off `fulfillmentDate`, not `createdAt`, so a snack
+ * ordered yesterday for today's 4PM service counts toward today's operational
+ * workload, and a breakfast ordered today for tomorrow does not. `createdAt`
+ * is preserved on every order for auditing but never drives these figures.
  *
  * Revenue rule: a cancelled order contributes nothing. Every other status
  * counts, because the shop has committed to the sale once it is accepted —
@@ -31,25 +37,25 @@ export type DashboardStats = {
 }
 
 export async function getDashboardStats(range: DateRange): Promise<DashboardStats> {
-  const createdAt = { gte: range.from, lte: range.to }
+  const fulfillmentDate = { gte: range.from, lte: range.to }
 
   const [byStatus, revenue, completed, items] = await Promise.all([
     prisma.order.groupBy({
       by: ['status'],
-      where: { createdAt },
+      where: { fulfillmentDate },
       _count: { _all: true },
     }),
     prisma.order.aggregate({
-      where: { createdAt, status: { in: [...REVENUE_STATUSES] } },
+      where: { fulfillmentDate, status: { in: [...REVENUE_STATUSES] } },
       _sum: { total: true },
       _count: { _all: true },
     }),
     prisma.order.aggregate({
-      where: { createdAt, status: 'COMPLETED' },
+      where: { fulfillmentDate, status: 'COMPLETED' },
       _sum: { total: true },
     }),
     prisma.orderItem.aggregate({
-      where: { order: { createdAt, status: { in: [...REVENUE_STATUSES] } } },
+      where: { order: { fulfillmentDate, status: { in: [...REVENUE_STATUSES] } } },
       _sum: { quantity: true },
     }),
   ])
@@ -87,7 +93,10 @@ export async function getBestSellers(range: DateRange, take = 5): Promise<BestSe
   const rows = await prisma.orderItem.groupBy({
     by: ['productName'],
     where: {
-      order: { createdAt: { gte: range.from, lte: range.to }, status: { in: [...REVENUE_STATUSES] } },
+      order: {
+        fulfillmentDate: { gte: range.from, lte: range.to },
+        status: { in: [...REVENUE_STATUSES] },
+      },
     },
     _sum: { quantity: true, subtotal: true },
     orderBy: { _sum: { quantity: 'desc' } },
@@ -102,19 +111,23 @@ export async function getBestSellers(range: DateRange, take = 5): Promise<BestSe
   }))
 }
 
-/** Per-day totals for the sales summary, ordered oldest first. */
+/** Per-day totals for the sales summary, ordered oldest first. Bucketed by the
+ * PH day the orders are FULFILLED on, matching the rest of the dashboard. */
 export async function getDailySales(
   range: DateRange,
 ): Promise<{ day: string; orders: number; sales: number }[]> {
   const orders = await prisma.order.findMany({
-    where: { createdAt: { gte: range.from, lte: range.to }, status: { in: [...REVENUE_STATUSES] } },
-    select: { createdAt: true, total: true },
-    orderBy: { createdAt: 'asc' },
+    where: {
+      fulfillmentDate: { gte: range.from, lte: range.to },
+      status: { in: [...REVENUE_STATUSES] },
+    },
+    select: { fulfillmentDate: true, total: true },
+    orderBy: { fulfillmentDate: 'asc' },
   })
 
   const buckets = new Map<string, { orders: number; sales: number }>()
   for (const order of orders) {
-    const day = order.createdAt.toISOString().slice(0, 10)
+    const day = phDayKey(order.fulfillmentDate)
     const bucket = buckets.get(day) ?? { orders: 0, sales: 0 }
     bucket.orders += 1
     bucket.sales += order.total
